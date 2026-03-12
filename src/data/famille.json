@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "prenom": "Jean",
+    "nom": "Dupont",
+    "naissance": "1940-01-01",
+    "deces": null,
+    "bio": "Premier ancêtre de la famille.",
+    "genre": "M",
+    "parentIds": [],
+    "conjointId": null,
+    "photo": null
+  }
+]
