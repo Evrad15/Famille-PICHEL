@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, Edit2, UserPlus, Users, Save, X, Camera, LogOut, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const FAMILY_PWD = "famille2026";
 const ADMIN_PWD = "admin2026";
