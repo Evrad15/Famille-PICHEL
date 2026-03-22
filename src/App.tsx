@@ -18,7 +18,10 @@ const H_GAP = 200;
 const V_GAP = 230;
 const FAN_DY = 120;
 
-const norm = (m) => ({
+// ══════════════════════════════════════════════
+//  API
+// ══════════════════════════════════════════════
+const norm = (m: any) => ({
   ...m,
   id: Number(m.id),
   parentIds: (Array.isArray(m.parentIds) ? m.parentIds : JSON.parse(m.parentIds || "[]")).map(Number),
@@ -26,25 +29,28 @@ const norm = (m) => ({
 });
 
 const apiGet = () => fetch("/api/membres").then(r => r.json()).then(d => d.map(norm));
-const apiAdd = (m) => fetch("/api/add-membre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
-const apiUpdate = (m) => fetch("/api/update-membre", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
-const apiDelete = (id) => fetch("/api/delete-membre", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(r => r.json());
+const apiAdd = (m: any) => fetch("/api/add-membre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
+const apiUpdate = (m: any) => fetch("/api/update-membre", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
+const apiDelete = (id: number) => fetch("/api/delete-membre", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(r => r.json());
 
-const nextId = (d) => Math.max(0, ...d.map(p => p.id)) + 1;
-const initials = (p) => `${p.prenom[0]}${p.nom[0]}`.toUpperCase();
-const fmtDate = (s) => s ? new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—";
-const isFem = (p) => p.genre === "F";
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+const nextId = (d: any[]) => Math.max(0, ...d.map(p => p.id)) + 1;
+const initials = (p: any) => `${p.prenom[0]}${p.nom[0]}`.toUpperCase();
+const fmtDate = (s: string) => s ? new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—";
+const isFem = (p: any) => p.genre === "F";
 
-function calcAge(b, d) {
+function calcAge(b: string, d: string | null) {
   const e = d ? new Date(d) : new Date(), bb = new Date(b);
   let a = e.getFullYear() - bb.getFullYear();
   if (e.getMonth() - bb.getMonth() < 0 || (e.getMonth() === bb.getMonth() && e.getDate() < bb.getDate())) a--;
   return a;
 }
 
-function buildGenMap(data) {
-  const memo = {};
-  function gen(id, stk = new Set()) {
+function buildGenMap(data: any[]) {
+  const memo: any = {};
+  function gen(id: number, stk = new Set()) {
     if (id in memo) return memo[id];
     if (stk.has(id)) return 0;
     const p = data.find(x => x.id === id);
@@ -52,12 +58,12 @@ function buildGenMap(data) {
     const ns = new Set(stk); ns.add(id);
     let g = 0;
     if (p.parentIds.length) {
-      g = 1 + Math.max(...p.parentIds.map((pid) => gen(pid, ns)));
+      g = 1 + Math.max(...p.parentIds.map((pid: number) => gen(pid, ns)));
     } else if (p.conjointIds.length) {
-      const cg = p.conjointIds.map((cid) => {
+      const cg = p.conjointIds.map((cid: number) => {
         const c = data.find(x => x.id === cid);
         if (!c || ns.has(cid)) return 0;
-        return c.parentIds.length ? 1 + Math.max(...c.parentIds.map((pid) => gen(pid, ns))) : 0;
+        return c.parentIds.length ? 1 + Math.max(...c.parentIds.map((pid: number) => gen(pid, ns))) : 0;
       });
       g = Math.max(0, ...cg);
     }
@@ -67,30 +73,30 @@ function buildGenMap(data) {
   return memo;
 }
 
-function subtreeOf(rootId, data) {
+function subtreeOf(rootId: number, data: any[]) {
   const s = new Set([rootId]);
   let ch = true;
-  while (ch) { ch = false; data.forEach(p => { if (!s.has(p.id) && p.parentIds.some((pid) => s.has(pid))) { s.add(p.id); ch = true; } }); }
+  while (ch) { ch = false; data.forEach(p => { if (!s.has(p.id) && p.parentIds.some((pid: number) => s.has(pid))) { s.add(p.id); ch = true; } }); }
   return s;
 }
 
-function computeLayout(data) {
+function computeLayout(data: any[]) {
   if (!data.length) return {};
   const genOf = buildGenMap(data);
   const H_GAP = 220;
   const V_GAP = 200;
-  const BLOCK_MARGIN = 120;
-  const pos = {};
-  const positioned = new Set();
-  const memoWidth = new Map();
+  const BLOCK_MARGIN = 120; // Marge de sécurité augmentée pour éviter tout chevauchement
+  const pos: any = {};
+  const positioned = new Set<number>();
+  const memoWidth = new Map<number, number>();
 
-  const isPatriarch = (id) => {
+  const isPatriarch = (id: number) => {
     const p = data.find(x => x.id === id);
     return p && p.conjointIds.length >= 3;
   };
 
-  function getWidth(id) {
-    if (memoWidth.has(id)) return memoWidth.get(id);
+  function getWidth(id: number): number {
+    if (memoWidth.has(id)) return memoWidth.get(id)!;
     const p = data.find(x => x.id === id);
     if (!p) return 0;
     const kids = data.filter(c => c.parentIds.includes(id));
@@ -99,13 +105,13 @@ function computeLayout(data) {
       let totalW = 0;
       p.conjointIds.forEach(sid => {
         const ukids = kids.filter(c => c.parentIds.includes(sid));
-        const spouseWidth = Math.max(H_GAP, ukids.reduce((s, k) => s + getWidth(k.id), 0));
+        const spouseWidth = Math.max(H_GAP, ukids.reduce((s: number, k: any) => s + getWidth(k.id), 0));
         totalW += spouseWidth + BLOCK_MARGIN;
       });
       memoWidth.set(id, totalW);
       return totalW;
     }
-    const unionGroups = [];
+    const unionGroups: any[] = [];
     p.conjointIds.forEach(sid => {
       const ukids = kids.filter(c => c.parentIds.includes(sid));
       unionGroups.push({ sid, kids: ukids });
@@ -115,14 +121,14 @@ function computeLayout(data) {
     if (unionGroups.length === 0) { memoWidth.set(id, H_GAP); return H_GAP; }
     let totalW = 0;
     unionGroups.forEach(group => {
-      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
       totalW += Math.max(H_GAP * 2, ukw) + BLOCK_MARGIN;
     });
     memoWidth.set(id, totalW);
     return totalW;
   }
 
-  function layout(id, centerX, yOffset = 0) {
+  function layout(id: number, centerX: number, yOffset = 0) {
     if (positioned.has(id)) return;
     const p = data.find(x => x.id === id);
     if (!p) return;
@@ -137,12 +143,12 @@ function computeLayout(data) {
         const s = data.find(x => x.id === sid);
         if (!s) return;
         const ukids = kids.filter(c => c.parentIds.includes(sid));
-        const ukw = ukids.reduce((s, k) => s + getWidth(k.id), 0);
+        const ukw = ukids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
         const spouseWidth = Math.max(H_GAP, ukw);
         const spouseX = curX + spouseWidth / 2;
         if (!positioned.has(s.id)) { pos[s.id] = { x: spouseX, y: pos[id].y + V_GAP }; positioned.add(s.id); }
         let kX = spouseX - ukw / 2;
-        ukids.forEach((k) => {
+        ukids.forEach((k: any) => {
           const kw = getWidth(k.id);
           layout(k.id, kX + kw / 2, yOffset + V_GAP);
           kX += kw;
@@ -151,7 +157,7 @@ function computeLayout(data) {
       });
       return;
     }
-    const unionGroups = [];
+    const unionGroups: any[] = [];
     p.conjointIds.forEach(sid => {
       const s = data.find(x => x.id === sid);
       if (!s) return;
@@ -165,14 +171,14 @@ function computeLayout(data) {
     let personX = centerX - blockWidth / 2;
     for (let i = 0; i < midIdx; i++) {
       const group = unionGroups[i];
-      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
       personX += Math.max(H_GAP * 2, ukw) + BLOCK_MARGIN;
     }
     pos[id] = { x: personX, y: (genOf[id] * V_GAP) + yOffset };
     positioned.add(id);
     let xOffset = centerX - blockWidth / 2;
     unionGroups.forEach((group, i) => {
-      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
       const uw = Math.max(H_GAP * 2, ukw);
       if (i === midIdx) xOffset = personX;
       if (group.spouse) {
@@ -180,10 +186,10 @@ function computeLayout(data) {
         if (!positioned.has(group.spouse.id)) { pos[group.spouse.id] = { x: spouseX, y: (genOf[group.spouse.id] * V_GAP) + yOffset }; positioned.add(group.spouse.id); }
         const pairMid = (pos[id].x + pos[group.spouse.id].x) / 2;
         let kX = pairMid - ukw / 2;
-        group.kids.forEach((k) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
+        group.kids.forEach((k: any) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
       } else {
         let kX = xOffset + uw / 2 - ukw / 2;
-        group.kids.forEach((k) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
+        group.kids.forEach((k: any) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
       }
       xOffset += uw + BLOCK_MARGIN;
     });
@@ -198,35 +204,52 @@ function computeLayout(data) {
       globalX += w + H_GAP;
     }
   });
+
   data.forEach(p => {
     if (!positioned.has(p.id)) {
       pos[p.id] = { x: globalX, y: genOf[p.id] * V_GAP };
       globalX += H_GAP;
     }
   });
+
   return pos;
 }
 
-function buildLinks(data, pos) {
-  const links = [], seenCouple = new Set();
+
+function buildLinks(data: any[], pos: any) {
+  const links: any[] = [], seenCouple = new Set<string>();
+
   data.forEach(p => {
     const isPat = p.conjointIds.length >= 3;
     if (isPat) {
       const pa = pos[p.id];
       if (!pa) return;
-      const wives = p.conjointIds.map((cid) => ({ id: cid, p: pos[cid] })).filter(x => x.p);
+      const wives = p.conjointIds.map((cid: number) => ({ id: cid, p: pos[cid] })).filter(x => x.p);
       if (!wives.length) return;
+
       const stemY = pa.y + R;
       const barY = stemY + (V_GAP * 0.4);
       links.push({ type: "fan-stem", id: `fstem-${p.id}`, x: pa.x, y1: stemY, y2: barY });
       const xs = wives.map(w => w.p.x);
       links.push({ type: "fan-hbar", id: `fhbar-${p.id}`, x1: Math.min(...xs), x2: Math.max(...xs), y: barY });
       wives.forEach(w => {
-        links.push({ type: "fan-branch", id: `fbr-${p.id}-${w.id}`, x: w.p.x, y1: barY, y2: w.p.y - R, p1id: p.id, p2id: w.id, midX: w.p.x, midY: (barY + w.p.y - R) / 2 });
+        links.push({ 
+          type: "fan-branch", 
+          id: `fbr-${p.id}-${w.id}`, 
+          x: w.p.x, 
+          y1: barY, 
+          y2: w.p.y - R, 
+          p1id: p.id, 
+          p2id: w.id, 
+          midX: w.p.x, 
+          midY: (barY + w.p.y - R) / 2 
+        });
       });
-      p.conjointIds.forEach((cid) => seenCouple.add(`${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`));
+      // Marquer les couples comme vus pour ne pas dessiner les liens standards
+      p.conjointIds.forEach((cid: number) => seenCouple.add(`${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`));
     }
-    p.conjointIds.forEach((cid) => {
+
+    p.conjointIds.forEach((cid: number) => {
       const key = `${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`;
       if (seenCouple.has(key)) return; seenCouple.add(key);
       const a = pos[p.id], b = pos[cid];
@@ -235,6 +258,7 @@ function buildLinks(data, pos) {
       links.push({ type: "couple", id: `cp-${key}`, x1: a.x + dx / len * R, y1: a.y + dy / len * R, x2: b.x - dx / len * R, y2: b.y - dy / len * R, midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2, p1id: p.id, p2id: cid });
     });
   });
+
   const famMap = new Map();
   data.forEach(c => {
     if (!c.parentIds.length) return;
@@ -242,14 +266,17 @@ function buildLinks(data, pos) {
     if (!famMap.has(key)) famMap.set(key, { pids: [...c.parentIds].sort((a, b) => a - b), children: [] });
     famMap.get(key).children.push(c);
   });
+
   let famIdx = 0;
   famMap.forEach(({ pids, children }) => {
-    const vk = children.filter((c) => pos[c.id]);
+    const vk = children.filter((c: any) => pos[c.id]);
     if (!vk.length) return;
     const isPatUnion = pids.some(pid => data.find(x => x.id === pid)?.conjointIds.length >= 3);
+
     let stemX, stemTopY;
     if (pids.length === 2 && pos[pids[0]] && pos[pids[1]]) {
       const p1 = pos[pids[0]], p2 = pos[pids[1]];
+      // Si c'est une union de patriarche, le lien part de la femme (qui est en dessous)
       if (isPatUnion) {
         const wifeId = pids.find(pid => data.find(x => x.id === pid)?.conjointIds.length < 3) || pids[0];
         stemX = pos[wifeId].x;
@@ -263,103 +290,133 @@ function buildLinks(data, pos) {
       stemX = pos[pids[0]].x;
       stemTopY = pos[pids[0]].y + R;
     }
+
     const kidY = pos[vk[0].id].y;
     const midY = stemTopY + (kidY - R - stemTopY) * 0.5 + (famIdx * 4);
     famIdx++;
     const famId = pids.join("-");
     links.push({ type: "stem", id: `stem-${famId}`, x: stemX, y1: stemTopY, y2: midY });
-    const xs = vk.map((c) => pos[c.id].x);
+    const xs = vk.map((c: any) => pos[c.id].x);
     links.push({ type: "hbar", id: `hbar-${famId}`, x1: vk.length > 1 ? Math.min(...xs) : stemX, x2: vk.length > 1 ? Math.max(...xs) : stemX, y: midY });
-    vk.forEach((c) => links.push({ type: "branch", id: `br-${c.id}`, x: pos[c.id].x, y1: midY, y2: pos[c.id].y - R }));
+    vk.forEach((c: any) => links.push({ type: "branch", id: `br-${c.id}`, x: pos[c.id].x, y1: midY, y2: pos[c.id].y - R }));
   });
   return links;
 }
 
+// ══════════════════════════════════════════════
+//  COMPONENTS
+// ══════════════════════════════════════════════
 function Spinner({ text = "Chargement..." }) {
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-[#06141B] to-[#11212D] gap-4">
-      <div className="w-9 h-9 border-[3px] border-[#253745] border-t-[#9BA8AB] rounded-full animate-spin" />
+      <div className="w-9 h-9 border-3 border-[#253745] border-t-[#9BA8AB] rounded-full animate-spin" />
       <span className="text-[#4A5C6A] text-sm font-serif">{text}</span>
     </div>
   );
 }
 
-function MemberForm({ config, data, onSave, onClose }) {
+function MemberForm({ config, data, onSave, onClose }: any) {
   const { type, targetId } = config;
-  const src = type === "edit" ? data.find((p) => p.id === targetId) : null;
+  const src = type === "edit" ? data.find((p: any) => p.id === targetId) : null;
   const [f, setF] = useState({ prenom: src?.prenom || "", nom: src?.nom || "", naissance: src?.naissance || "", deces: src?.deces || "", bio: src?.bio || "", genre: src?.genre || "M", photo: src?.photo || null });
   const [saving, setSaving] = useState(false);
-  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const set = (k: string, v: any) => setF(x => ({ ...x, [k]: v }));
   const canSave = f.prenom.trim() && f.nom.trim() && f.naissance;
-  const fileRef = useRef(null);
-  const handlePhoto = (e) => {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handlePhoto = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     const r = new FileReader();
     r.onload = ev => set("photo", ev.target?.result);
     r.readAsDataURL(file);
   };
+
   const handleSave = async () => {
     if (!canSave) return;
     setSaving(true);
     await onSave({ ...f, deces: f.deces || null });
     setSaving(false);
   };
-  const titles = { "add-conjoint": "💑 Ajouter un(e) conjoint(e)", "add-child": "👶 Ajouter un enfant", "add-parent": "👴 Ajouter un parent", "edit": "✏️ Modifier" };
+
+  const titles: any = { "add-conjoint": "💑 Ajouter un(e) conjoint(e)", "add-child": "👶 Ajouter un enfant", "add-parent": "👴 Ajouter un parent", "edit": "✏️ Modifier" };
+
   return (
     <div onClick={onClose} className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} onClick={e => e.stopPropagation()}
-        className="bg-gradient-to-br from-[#06141B] to-[#11212D] border border-[#253745] rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-bold text-[#CCD0CF] mb-6">{titles[type]}</h2>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-gradient-to-br from-[#06141B] to-[#11212D] border border-[#253745] rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-thin"
+      >
+        <h2 className="text-lg font-display font-bold text-[#CCD0CF] mb-6">{titles[type]}</h2>
+        
         <div className="flex items-center gap-4 mb-6">
-          <div onClick={() => fileRef.current?.click()}
-            className={`w-16 h-16 ${f.genre === "M" ? "rounded-lg" : "rounded-full"} bg-[#11212D] border-2 border-dashed border-[#4A5C6A] flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 group`}>
+          <div
+            onClick={() => fileRef.current?.click()}
+            className={`w-16 h-16 ${f.genre === "M" ? "rounded-lg" : "rounded-full"} bg-[#11212D] border-2 border-dashed border-[#4A5C6A] flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 group relative`}
+          >
             {f.photo ? <img src={f.photo} alt="" className="w-full h-full object-cover" /> : <Camera className="text-[#4A5C6A] group-hover:text-[#9BA8AB]" size={24} />}
           </div>
           <div className="flex flex-col gap-2">
-            <span className="text-xs text-[#9BA8AB]">Photo de profil</span>
-            <button onClick={() => fileRef.current?.click()} className="px-3 py-1 bg-[#253745] border border-[#4A5C6A] rounded-md text-[10px] text-[#9BA8AB] hover:text-white transition-colors">Importer</button>
+            <span className="text-xs text-[#9BA8AB] font-serif">Photo de profil</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => fileRef.current?.click()} className="px-3 py-1 bg-[#253745] border border-[#4A5C6A] rounded-md text-[10px] text-[#9BA8AB] hover:text-white transition-colors">Importer</button>
+            </div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
         </div>
+
         <div className="grid grid-cols-2 gap-4 mb-4">
-          {[["Prénom *", "prenom"], ["Nom *", "nom"]].map(([lb, k]) => (
-            <div key={k} className="flex flex-col gap-1">
-              <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider">{lb}</label>
-              <input value={f[k]} onChange={e => set(k, e.target.value)} className="bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none" />
-            </div>
-          ))}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans">Prénom *</label>
+            <input value={f.prenom} onChange={e => set("prenom", e.target.value)} className="bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans">Nom *</label>
+            <input value={f.nom} onChange={e => set("nom", e.target.value)} className="bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none" />
+          </div>
         </div>
+
         <div className="mb-4">
-          <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider mb-1 block">Genre *</label>
+          <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans mb-1 block">Genre *</label>
           <div className="flex gap-2">
-            {[["M", "Homme", C.male], ["F", "Femme", C.female]].map(([v, lb, col]) => (
-              <button key={v} onClick={() => set("genre", v)} className="flex-1 py-2 rounded-lg text-xs transition-all border"
-                style={{ borderColor: f.genre === v ? col : "#253745", color: f.genre === v ? col : "#4A5C6A", backgroundColor: f.genre === v ? `${col}18` : "#11212D" }}>
+            {[["M", "Homme", C.male], ["F", "Femme", C.female]].map(([v, lb, col]: any) => (
+              <button
+                key={v}
+                onClick={() => set("genre", v)}
+                className={`flex-1 py-2 rounded-lg border-1.5 text-xs transition-all ${f.genre === v ? `border-[${col}] bg-[${col}]/10 text-[${col}]` : "border-[#253745] bg-[#11212D] text-[#4A5C6A]"}`}
+                style={{ borderColor: f.genre === v ? col : "#253745", color: f.genre === v ? col : "#4A5C6A", backgroundColor: f.genre === v ? `${col}18` : "#11212D" }}
+              >
                 {v === "M" ? "🟦" : "🔴"} {lb}
               </button>
             ))}
           </div>
         </div>
+
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider">Naissance *</label>
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans">Naissance *</label>
             <input type="date" value={f.naissance} onChange={e => set("naissance", e.target.value)} className="bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none" />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider">Décès</label>
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans">Décès</label>
             <input type="date" value={f.deces} onChange={e => set("deces", e.target.value)} className="bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none" />
           </div>
         </div>
+
         <div className="mb-6">
-          <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider mb-1 block">Biographie</label>
-          <textarea value={f.bio} onChange={e => set("bio", e.target.value)} placeholder="Quelques mots..."
-            className="w-full bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none min-h-[80px] resize-none" />
+          <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans mb-1 block">Biographie</label>
+          <textarea value={f.bio} onChange={e => set("bio", e.target.value)} placeholder="Quelques mots..." className="w-full bg-[#11212D] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none min-h-[80px] resize-none" />
         </div>
+
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-[#11212D] border border-[#253745] text-[#4A5C6A] text-sm hover:text-white transition-colors">Annuler</button>
-          <button onClick={handleSave} disabled={!canSave || saving}
-            className={`flex-[2] py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${canSave ? "bg-[#4A8FBF]/20 border border-[#4A8FBF] text-[#CCD0CF] hover:bg-[#4A8FBF]/30" : "bg-[#11212D] border border-[#253745] text-[#4A5C6A] cursor-not-allowed"}`}>
+          <button
+            onClick={handleSave}
+            disabled={!canSave || saving}
+            className={`flex-[2] py-2.5 rounded-xl font-display font-bold text-sm flex items-center justify-center gap-2 transition-all ${canSave ? "bg-[#4A8FBF]/20 border border-[#4A8FBF] text-[#CCD0CF] hover:bg-[#4A8FBF]/30" : "bg-[#11212D] border border-[#253745] text-[#4A5C6A] cursor-not-allowed"}`}
+          >
             {saving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
             {saving ? "Enregistrement..." : "Enregistrer"}
           </button>
@@ -369,7 +426,7 @@ function MemberForm({ config, data, onSave, onClose }) {
   );
 }
 
-function PersonNode({ person, p, isSelected, isDragging, onClick }) {
+function PersonNode({ person, p, isSelected, isDragging, onClick }: any) {
   const fem = isFem(person), col = fem ? C.female : C.male, colL = fem ? C.femaleL : C.maleL;
   const dead = !!person.deces, { x, y } = p;
   return (
@@ -378,67 +435,96 @@ function PersonNode({ person, p, isSelected, isDragging, onClick }) {
       {fem ? <circle r={R + 1} cy={3} fill="rgba(0,0,0,0.28)" /> : <rect x={-R + 1} y={-R + 3} width={NW} height={NH} rx={5} fill="rgba(0,0,0,0.28)" />}
       {fem ? <circle r={R} fill={dead ? C.c2 : colL} stroke={isSelected ? col : `${col}80`} strokeWidth={isSelected ? 2.5 : 1.5} className="transition-all duration-200" />
         : <rect x={-R} y={-R} width={NW} height={NH} rx={5} fill={dead ? C.c2 : colL} stroke={isSelected ? col : `${col}80`} strokeWidth={isSelected ? 2.5 : 1.5} className="transition-all duration-200" />}
-      {person.photo && (<><clipPath id={`cl-${person.id}`}>{fem ? <circle r={R - 2} /> : <rect x={-R + 2} y={-R + 2} width={NW - 4} height={NH - 4} rx={4} />}</clipPath><image href={person.photo} x={-R + 2} y={-R + 2} width={NW - 4} height={NH - 4} clipPath={`url(#cl-${person.id})`} preserveAspectRatio="xMidYMid slice" style={{ opacity: dead ? 0.45 : 1 }} /></>)}
-      {!person.photo && <text textAnchor="middle" dominantBaseline="central" fill={dead ? C.c4 : col} fontSize="13" fontWeight="700" style={{ userSelect: "none" }}>{initials(person)}</text>}
-      {dead && <text x={R - 6} y={-R + 9} fontSize="9" fill={C.c4} style={{ userSelect: "none" }}>✝</text>}
-      <text y={R + 14} textAnchor="middle" fill={isSelected ? C.c6 : C.c4} fontSize="9" style={{ userSelect: "none" }}>{person.prenom}</text>
+      {person.photo && (
+        <>
+          <clipPath id={`cl-${person.id}`}>{fem ? <circle r={R - 2} /> : <rect x={-R + 2} y={-R + 2} width={NW - 4} height={NH - 4} rx={4} />}</clipPath>
+          <image href={person.photo} x={-R + 2} y={-R + 2} width={NW - 4} height={NH - 4} clipPath={`url(#cl-${person.id})`} preserveAspectRatio="xMidYMid slice" style={{ opacity: dead ? 0.45 : 1 }} />
+        </>
+      )}
+      {!person.photo && <text textAnchor="middle" dominantBaseline="central" fill={dead ? C.c4 : col} fontSize="13" fontWeight="700" className="font-display select-none">{initials(person)}</text>}
+      {dead && <text x={R - 6} y={-R + 9} fontSize="9" fill={C.c4} className="select-none">✝</text>}
+      <text y={R + 14} textAnchor="middle" fill={isSelected ? C.c6 : C.c4} fontSize="9" className="font-serif select-none transition-colors duration-200">{person.prenom}</text>
     </g>
   );
 }
 
-function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParent, onAddChild, onEdit, onDelete, onSelect }) {
+function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParent, onAddChild, onEdit, onDelete, onSelect }: any) {
   const fem = isFem(person), col = fem ? C.female : C.male;
   const dead = !!person.deces, age = calcAge(person.naissance, person.deces);
-  const conjoints = person.conjointIds.map((id) => data.find((p) => p.id === id)).filter(Boolean);
-  const parents = person.parentIds.map((id) => data.find((p) => p.id === id)).filter(Boolean);
+  const conjoints = person.conjointIds.map((id: number) => data.find((p: any) => p.id === id)).filter(Boolean);
+  const parents = person.parentIds.map((id: number) => data.find((p: any) => p.id === id)).filter(Boolean);
   const children = data.filter(p => p.parentIds.includes(person.id));
-  const allSiblings = data.filter(p => p.id !== person.id && p.parentIds.some((pid) => person.parentIds.includes(pid)));
-  const fullSiblings = allSiblings.filter(s => s.parentIds.length === person.parentIds.length && s.parentIds.every(pid => person.parentIds.includes(pid)));
+  const allSiblings = data.filter(p => p.id !== person.id && p.parentIds.some((pid: number) => person.parentIds.includes(pid)));
+  
+  const fullSiblings = allSiblings.filter(s => 
+    s.parentIds.length === person.parentIds.length && 
+    s.parentIds.every(pid => person.parentIds.includes(pid))
+  );
+  
   const halfSiblings = allSiblings.filter(s => !fullSiblings.includes(s));
-  const grandchildren = data.filter(p => p.parentIds.some((pid) => children.map(c => c.id).includes(pid)));
+  const grandchildren = data.filter(p => p.parentIds.some((pid: number) => children.map(c => c.id).includes(pid)));
+
   return (
-    <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
-      className="fixed top-0 right-0 w-72 h-screen bg-gradient-to-b from-[#06141B] to-[#11212D] border-l-2 border-[#253745] z-[100] flex flex-col shadow-2xl">
+    <motion.div
+      initial={{ x: "100%" }}
+      animate={{ x: 0 }}
+      exit={{ x: "100%" }}
+      className="fixed top-0 right-0 w-72 h-screen bg-gradient-to-b from-[#06141B] to-[#11212D] border-l-2 border-[#253745] z-[100] flex flex-col shadow-2xl"
+    >
       <div className="p-4 border-b border-[#253745] flex-shrink-0">
         <button onClick={onClose} className="float-right text-[#4A5C6A] hover:text-white transition-colors"><X size={20} /></button>
         <div className="flex items-center gap-3">
-          <div className={`w-14 h-14 ${fem ? "rounded-full" : "rounded-lg"} bg-[#11212D] border-2 flex items-center justify-center overflow-hidden flex-shrink-0`} style={{ borderColor: col }}>
-            {person.photo ? <img src={person.photo} className={`w-full h-full object-cover ${dead ? "opacity-50" : ""}`} /> : <span className="text-sm font-bold" style={{ color: col }}>{initials(person)}</span>}
+          <div className={`w-14 h-14 ${fem ? "rounded-full" : "rounded-lg"} bg-[#11212D] border-2 border-[${col}] flex items-center justify-center overflow-hidden flex-shrink-0`} style={{ borderColor: col }}>
+            {person.photo ? <img src={person.photo} className={`w-full h-full object-cover ${dead ? "opacity-50" : ""}`} /> : <span className="text-sm font-bold font-display" style={{ color: col }}>{initials(person)}</span>}
           </div>
           <div>
-            <div className="font-bold text-[#CCD0CF] leading-tight">{person.prenom}</div>
-            <div className="text-xs" style={{ color: col }}>{person.nom}</div>
+            <div className="font-display font-bold text-[#CCD0CF] leading-tight flex items-center gap-2">
+              {person.prenom}
+            </div>
+            <div className="text-xs font-serif" style={{ color: col }}>{person.nom}</div>
             {dead && <div className="text-[9px] text-[#4A5C6A] mt-1">✝ Décédé(e) · {age} ans</div>}
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
         <div className="grid grid-cols-2 gap-2">
           {[["🎂", "Naissance", fmtDate(person.naissance)], [dead ? "⚰️" : "⏳", dead ? "Décès" : "Âge", dead ? fmtDate(person.deces) : `${age} ans`]].map(([ic, lb, vl]) => (
             <div key={lb} className="bg-[#11212D] border border-[#253745] rounded-xl p-2.5">
               <div className="text-sm mb-1">{ic}</div>
-              <div className="text-[8px] text-[#4A5C6A] uppercase tracking-widest mb-0.5">{lb}</div>
-              <div className="text-[11px] text-[#9BA8AB]">{vl}</div>
+              <div className="text-[8px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-0.5">{lb}</div>
+              <div className="text-[11px] text-[#9BA8AB] font-serif">{vl}</div>
             </div>
           ))}
         </div>
-        {person.bio && <div><label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest mb-1.5 block">Biographie</label><p className="text-xs text-[#9BA8AB] leading-relaxed">{person.bio}</p></div>}
-        {[[`💑 Conjoint(e)${conjoints.length > 1 ? "s" : ""}`, conjoints], ["👨‍👩‍👧 Parents", parents], [`👶 Enfants (${children.length})`, children], [`🍼 Petits-Enfants (${grandchildren.length})`, grandchildren], ["👥 Frères & Sœurs", fullSiblings], ["👥 Demi-Frères & Sœurs", halfSiblings]].filter(([, m]) => m.length > 0).map(([lb, members]) => (
+
+        {person.bio && (
+          <div>
+            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-1.5 block">Biographie</label>
+            <p className="text-xs text-[#9BA8AB] leading-relaxed font-serif">{person.bio}</p>
+          </div>
+        )}
+
+        {[[`💑 Conjoint(e)${conjoints.length > 1 ? "s" : ""}`, conjoints], ["👨‍👩‍👧 Parents", parents], [`👶 Enfants (${children.length})`, children], [`🍼 Petits-Enfants (${grandchildren.length})`, grandchildren], [`👥 Frères & Sœurs`, fullSiblings], [`👥 Demi-Frères & Sœurs`, halfSiblings]].filter(([, m]) => m.length > 0).map(([lb, members]) => (
           <div key={lb}>
-            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest mb-2 block">{lb}</label>
+            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-2 block">{lb}</label>
             <div className="flex flex-wrap gap-1.5">
-              {members.map((m) => (
-                <button key={m.id} onClick={() => onSelect(m.id)}
-                  className={`px-2.5 py-1 rounded-full text-[10px] border transition-all hover:scale-105 active:scale-95 ${isFem(m) ? "bg-[#BF4A6A]/10 border-[#BF4A6A]/30 text-[#BF4A6A] hover:bg-[#BF4A6A]/20" : "bg-[#4A8FBF]/10 border-[#4A8FBF]/30 text-[#4A8FBF] hover:bg-[#4A8FBF]/20"}`}>
+              {members.map((m: any) => (
+                <button 
+                  key={m.id} 
+                  onClick={() => onSelect(m.id)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-serif border transition-all hover:scale-105 active:scale-95 ${isFem(m) ? "bg-[#BF4A6A]/10 border-[#BF4A6A]/30 text-[#BF4A6A] hover:bg-[#BF4A6A]/20" : "bg-[#4A8FBF]/10 border-[#4A8FBF]/30 text-[#4A8FBF] hover:bg-[#4A8FBF]/20"}`}
+                >
                   {m.prenom} {m.nom}
                 </button>
               ))}
             </div>
           </div>
         ))}
+
         {isAdmin && (
-          <div className="pt-4 border-t border-[#253745] space-y-2">
-            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest block">⚙️ Administration</label>
+          <div className="pt-6 border-t border-[#253745] space-y-3">
+            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-1 block">⚙️ Administration</label>
             <div className="flex flex-col gap-2">
               <AdminBtn onClick={onAddConjoint} icon={<UserPlus size={14} />} text="Ajouter conjoint(e)" color="#9BA8AB" />
               <AdminBtn onClick={onAddParent} icon={<Users size={14} />} text="Ajouter parent" color="#a89bd4" />
@@ -453,17 +539,19 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
   );
 }
 
-function AdminBtn({ onClick, icon, text, color, danger }) {
+function AdminBtn({ onClick, icon, text, color, danger }: any) {
   return (
-    <button onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all border ${danger ? "bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500/10" : "bg-[#11212D] border-[#253745] text-[#9BA8AB] hover:text-white hover:bg-[#253745]"}`}
-      style={{ color: !danger ? color : undefined }}>
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-serif transition-all border ${danger ? "bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500/10" : "bg-[#11212D] border-[#253745] text-[#9BA8AB] hover:text-white hover:bg-[#253745]"}`}
+      style={{ color: !danger ? color : undefined }}
+    >
       {icon} {text}
     </button>
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin }: any) {
   const [pwd, setPwd] = useState(""), [err, setErr] = useState(false), [shake, setShake] = useState(false);
   const go = () => {
     if (pwd === FAMILY_PWD) { onLogin("family"); return; }
@@ -472,26 +560,33 @@ function LoginScreen({ onLogin }) {
   };
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#06141B] via-[#11212D] to-[#253745] flex items-center justify-center p-6">
-      <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}} @keyframes shake{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-6px)}50%{transform:translateX(6px)}}`}</style>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-[#06141B]/90 to-[#11212D]/90 backdrop-blur-xl border border-[#253745] rounded-3xl p-10 w-full max-w-xs text-center shadow-2xl"
-        style={{ animation: shake ? "shake 0.45s ease-out" : undefined }}>
-        <div className="text-6xl mb-4" style={{ animation: "float 4s ease-in-out infinite" }}>🌳</div>
-        <h1 className="font-bold text-[#CCD0CF] text-2xl mb-1">Arbre Familial</h1>
-        <p className="text-[#4A5C6A] text-sm italic mb-8">Espace privé de la famille</p>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`bg-gradient-to-br from-[#06141B]/90 to-[#11212D]/90 backdrop-blur-xl border border-[#253745] rounded-3xl p-10 w-full max-w-xs text-center shadow-2xl ${shake ? "animate-[shake_0.45s_ease-out]" : ""}`}
+      >
+        <div className="text-6xl mb-4 animate-[float_4s_ease-in-out_infinite]">🌳</div>
+        <h1 className="font-display font-bold text-[#CCD0CF] text-2xl mb-1">Arbre Familial</h1>
+        <p className="text-[#4A5C6A] text-sm font-serif italic mb-8">Espace privé de la famille</p>
+        
         <div className="space-y-4">
-          <input type="password" value={pwd} placeholder="Mot de passe"
+          <input
+            type="password"
+            value={pwd}
+            placeholder="Mot de passe"
             onChange={e => { setPwd(e.target.value); setErr(false); }}
             onKeyDown={e => e.key === "Enter" && go()}
-            className="w-full bg-[#11212D] border border-[#253745] rounded-xl px-4 py-3 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none placeholder:text-[#4A5C6A]" />
-          {err && <p className="text-red-500 text-[10px]">Mot de passe incorrect</p>}
-          <button onClick={go} className="w-full py-3 rounded-xl bg-gradient-to-r from-[#253745] to-[#4A5C6A] border border-[#4A5C6A] text-[#CCD0CF] font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all">Entrer →</button>
+            className="w-full bg-[#11212D] border border-[#253745] rounded-xl px-4 py-3 text-sm text-[#CCD0CF] focus:border-[#4A8FBF] outline-none transition-all placeholder:text-[#4A5C6A]"
+          />
+          {err && <p className="text-red-500 text-[10px] font-sans">Mot de passe incorrect</p>}
+          <button onClick={go} className="w-full py-3 rounded-xl bg-gradient-to-r from-[#253745] to-[#4A5C6A] border border-[#4A5C6A] text-[#CCD0CF] font-display font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all">Entrer →</button>
         </div>
+
         <div className="mt-8 flex justify-center gap-6">
-          {[["Homme", false], ["Femme", true]].map(([lb, f]) => (
+          {[["Homme", false], ["Femme", true]].map(([lb, f]: any) => (
             <div key={lb} className="flex items-center gap-2">
-              <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border`} style={{ backgroundColor: `${f ? C.female : C.male}30`, borderColor: f ? C.female : C.male }} />
-              <span className="text-[10px] text-[#4A5C6A] uppercase tracking-wider">{lb}</span>
+              <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border-1.5`} style={{ backgroundColor: `${f ? C.female : C.male}30`, borderColor: f ? C.female : C.male }} />
+              <span className="text-[10px] text-[#4A5C6A] font-sans uppercase tracking-wider">{lb}</span>
             </div>
           ))}
         </div>
@@ -500,38 +595,48 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+// ══════════════════════════════════════════════
+//  MAIN APP
+// ══════════════════════════════════════════════
 export default function App() {
-  const [mode, setMode] = useState(null);
-  const [data, setData] = useState([]);
+  const [mode, setMode] = useState<string | null>(null);
+  const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [form, setForm] = useState<any>(null);
   const [tf, setTf] = useState({ x: 0, y: 0, scale: 1 });
-  const [panDrag, setPanDrag] = useState(null);
+  const [panDrag, setPanDrag] = useState<any>(null);
   const [svgW, setSvgW] = useState(window.innerWidth);
-  const [offsets, setOffsets] = useState({});
+  const [offsets, setOffsets] = useState<any>({});
   const [search, setSearch] = useState("");
-  const subtreeDragRef = useRef(null);
-  const svgRef = useRef(null);
+  const subtreeDragRef = useRef<any>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const basePos = computeLayout(data);
-  const finalPos = {};
+  const finalPos: any = {};
   Object.keys(basePos).forEach(id => {
     const nid = Number(id), off = offsets[nid] || { dx: 0, dy: 0 };
     finalPos[nid] = { x: basePos[nid].x + off.dx, y: basePos[nid].y + off.dy };
   });
+
   const links = buildLinks(data, finalPos);
   const selPerson = data.find(p => p.id === selected);
   const isAdmin = mode === "admin";
   const panelOpen = !!selPerson;
 
-  const searchResults = search.trim() ? data.filter(p => `${p.prenom} ${p.nom}`.toLowerCase().includes(search.toLowerCase())) : [];
+  // Filtrage pour la recherche
+  const searchResults = search.trim() 
+    ? data.filter(p => `${p.prenom} ${p.nom}`.toLowerCase().includes(search.toLowerCase()))
+    : [];
 
-  const handleSearchSelect = (person) => {
-    setSelected(person.id); setSearch("");
+  const handleSearchSelect = (person: any) => {
+    setSelected(person.id);
+    setSearch("");
+    // Centrer la vue sur la personne
     const p = finalPos[person.id];
-    if (p) setTf(t => ({ ...t, x: -p.x * t.scale, y: -p.y * t.scale }));
+    if (p) {
+      setTf(t => ({ ...t, x: -p.x * t.scale, y: -p.y * t.scale }));
+    }
   };
 
   useEffect(() => {
@@ -546,7 +651,7 @@ export default function App() {
     return () => window.removeEventListener("resize", upd);
   }, []);
 
-  const onWheel = useCallback((e) => {
+  const onWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     setTf(t => ({ ...t, scale: Math.min(3, Math.max(0.15, t.scale * (e.deltaY < 0 ? 1.1 : 0.91))) }));
   }, []);
@@ -557,30 +662,30 @@ export default function App() {
     return () => el?.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
-  const toSvg = useCallback((cx, cy) => {
+  const toSvg = useCallback((cx: number, cy: number) => {
     const ox = (svgW - (panelOpen ? 280 : 0)) / 2;
     return { sx: (cx - ox - tf.x) / tf.scale, sy: (cy - 90 - tf.y) / tf.scale };
   }, [svgW, panelOpen, tf]);
 
-  const onMD = useCallback((e) => {
-    if (isAdmin && e.target.dataset.fanwife) {
-      const wifId = Number(e.target.dataset.fanwife);
+  const onMD = useCallback((e: any) => {
+    if (isAdmin && (e.target as any).dataset.fanwife) {
+      const wifId = Number((e.target as any).dataset.fanwife);
       const subtree = subtreeOf(wifId, data);
       const { sx, sy } = toSvg(e.clientX, e.clientY);
       subtreeDragRef.current = { wifId, subtree, sx0: sx, sy0: sy, moved: false, baseOff: { ...offsets } };
       e.stopPropagation(); return;
     }
-    if (e.target.closest("[data-node]")) return;
+    if ((e.target as HTMLElement).closest("[data-node]")) return;
     setPanDrag({ sx: e.clientX - tf.x, sy: e.clientY - tf.y });
   }, [isAdmin, data, offsets, toSvg, tf]);
 
-  const onMM = useCallback((e) => {
+  const onMM = useCallback((e: any) => {
     if (subtreeDragRef.current) {
       const { sx, sy } = toSvg(e.clientX, e.clientY);
       const dx = sx - subtreeDragRef.current.sx0, dy = sy - subtreeDragRef.current.sy0;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) subtreeDragRef.current.moved = true;
       const next = { ...subtreeDragRef.current.baseOff };
-      subtreeDragRef.current.subtree.forEach((id) => {
+      subtreeDragRef.current.subtree.forEach((id: number) => {
         const b = subtreeDragRef.current.baseOff[id] || { dx: 0, dy: 0 };
         next[id] = { dx: b.dx + dx, dy: b.dy + dy };
       });
@@ -591,7 +696,7 @@ export default function App() {
 
   const onMU = useCallback(() => { subtreeDragRef.current = null; setPanDrag(null); }, []);
 
-  const handleSave = async (fd) => {
+  const handleSave = async (fd: any) => {
     if (!form) return;
     const { type, targetId, parentIds } = form;
     if (type === "edit") {
@@ -621,20 +726,26 @@ export default function App() {
     setForm(null);
   };
 
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+
+  const handleDelete = async (id: number) => {
+    setConfirmDelete(id);
+  };
+
   const executeDelete = async () => {
     if (!confirmDelete) return;
     const id = confirmDelete;
     await apiDelete(id);
     setData(d => d.filter(p => p.id !== id).map(p => ({
       ...p,
-      conjointIds: p.conjointIds.filter((c) => c !== id),
-      parentIds: p.parentIds.filter((c) => c !== id),
+      conjointIds: p.conjointIds.filter((c: number) => c !== id),
+      parentIds: p.parentIds.filter((c: number) => c !== id),
     })));
     setConfirmDelete(null);
     setSelected(null);
   };
 
-  const handleLinkClick = (e, link) => {
+  const handleLinkClick = (e: any, link: any) => {
     if (!isAdmin) return;
     if (subtreeDragRef.current?.moved) return;
     e.stopPropagation();
@@ -652,20 +763,28 @@ export default function App() {
       <div className="h-14 bg-[#06141B]/90 backdrop-blur-xl border-b border-[#253745] flex items-center justify-between px-6 flex-shrink-0 z-50">
         <div className="flex items-center gap-4">
           <span className="text-xl">🌳</span>
-          <h1 className="font-bold text-[#CCD0CF] text-base">Arbre Familial</h1>
-          <span className="text-[10px] text-[#4A5C6A] uppercase tracking-widest">{data.length} membres</span>
-          {isAdmin && <span className="bg-[#82c582]/10 border border-[#82c582]/30 text-[#82c582] text-[8px] px-2 py-0.5 rounded-full tracking-widest uppercase">Admin</span>}
+          <h1 className="font-display font-bold text-[#CCD0CF] text-base">Arbre Familial</h1>
+          <span className="text-[10px] text-[#4A5C6A] uppercase tracking-widest font-sans">{data.length} membres</span>
+          {isAdmin && <span className="bg-[#82c582]/10 border border-[#82c582]/30 text-[#82c582] text-[8px] px-2 py-0.5 rounded-full font-sans tracking-widest uppercase">Admin</span>}
         </div>
         <div className="flex items-center gap-4 flex-1 max-w-md mx-4 relative">
           <div className="relative w-full">
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un membre..."
-              className="w-full bg-[#11212D] border border-[#253745] rounded-full px-4 py-1.5 text-xs text-[#CCD0CF] focus:border-[#4A8FBF] outline-none transition-all" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un membre..."
+              className="w-full bg-[#11212D] border border-[#253745] rounded-full px-4 py-1.5 text-xs text-[#CCD0CF] focus:border-[#4A8FBF] outline-none transition-all"
+            />
             {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-[#11212D] border border-[#253745] rounded-xl shadow-2xl overflow-hidden z-[100] max-h-60 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-[#11212D] border border-[#253745] rounded-xl shadow-2xl overflow-hidden z-[100] max-h-60 overflow-y-auto scrollbar-thin">
                 {searchResults.map(p => (
-                  <button key={p.id} onClick={() => handleSearchSelect(p)}
-                    className="w-full px-4 py-2 text-left text-xs text-[#9BA8AB] hover:bg-[#253745] hover:text-white transition-colors flex items-center gap-2 border-b border-[#253745] last:border-0">
-                    <div className="w-6 h-6 rounded-full border flex items-center justify-center text-[8px]" style={{ borderColor: isFem(p) ? C.female : C.male }}>
+                  <button
+                    key={p.id}
+                    onClick={() => handleSearchSelect(p)}
+                    className="w-full px-4 py-2 text-left text-xs text-[#9BA8AB] hover:bg-[#253745] hover:text-white transition-colors flex items-center gap-2 border-b border-[#253745] last:border-0"
+                  >
+                    <div className={`w-6 h-6 rounded-full border border-[${isFem(p) ? C.female : C.male}] flex items-center justify-center text-[8px]`} style={{ borderColor: isFem(p) ? C.female : C.male }}>
                       {initials(p)}
                     </div>
                     {p.prenom} {p.nom}
@@ -677,39 +796,47 @@ export default function App() {
         </div>
         <div className="flex gap-2 items-center">
           {isAdmin && Object.keys(offsets).length > 0 && (
-            <button onClick={() => setOffsets({})} className="h-8 px-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] uppercase tracking-widest hover:bg-red-500/20 transition-colors">Positions</button>
+            <button onClick={() => setOffsets({})} className="h-8 px-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-sans uppercase tracking-widest hover:bg-red-500/20 transition-colors">Positions</button>
           )}
           <div className="flex bg-[#11212D] border border-[#253745] rounded-lg p-0.5">
             <button onClick={() => setTf(t => ({ ...t, scale: Math.max(0.15, t.scale - 0.15) }))} className="w-8 h-8 flex items-center justify-center text-[#9BA8AB] hover:text-white transition-colors"><ZoomOut size={16} /></button>
             <button onClick={() => setTf(t => ({ ...t, scale: Math.min(3, t.scale + 0.15) }))} className="w-8 h-8 flex items-center justify-center text-[#9BA8AB] hover:text-white transition-colors"><ZoomIn size={16} /></button>
           </div>
-          <button onClick={() => setTf({ x: 0, y: 0, scale: 1 })} className="h-8 px-3 rounded-lg bg-[#11212D] border border-[#253745] text-[#9BA8AB] text-[10px] uppercase tracking-widest hover:text-white transition-colors">Centrer</button>
-          <button onClick={() => { setMode(null); setSelected(null); setData([]); setOffsets({}); }} className="h-8 px-3 rounded-lg bg-[#11212D] border border-[#253745] text-[#9BA8AB] text-[10px] uppercase tracking-widest hover:text-white transition-colors flex items-center gap-2"><LogOut size={12} /> Quitter</button>
+          <button onClick={() => setTf({ x: 0, y: 0, scale: 1 })} className="h-8 px-3 rounded-lg bg-[#11212D] border border-[#253745] text-[#9BA8AB] text-[10px] font-sans uppercase tracking-widest hover:text-white transition-colors">Centrer</button>
+          <button onClick={() => { setMode(null); setSelected(null); setData([]); setOffsets({}); }} className="h-8 px-3 rounded-lg bg-[#11212D] border border-[#253745] text-[#9BA8AB] text-[10px] font-sans uppercase tracking-widest hover:text-white transition-colors flex items-center gap-2"><LogOut size={12} /> Quitter</button>
         </div>
       </div>
 
       <svg ref={svgRef} className={`flex-1 ${subtreeDragRef.current || panDrag ? "cursor-grabbing" : "cursor-grab"}`} onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}>
         <g transform={`translate(${cx_val + tf.x},${90 + tf.y}) scale(${tf.scale})`}>
-          {links.map((l) => {
+          {links.map((l: any) => {
             if (l.type === "fan-stem") return <line key={l.id} x1={l.x} y1={l.y1} x2={l.x} y2={l.y2} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />;
             if (l.type === "fan-hbar") return <line key={l.id} x1={l.x1} y1={l.y} x2={l.x2} y2={l.y} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />;
             if (l.type === "fan-branch") {
-              return (<g key={l.id}>
-                <line x1={l.x} y1={l.y1} x2={l.x} y2={l.y2} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />
-                {isAdmin && (<g onClick={e => handleLinkClick(e, l)} className="cursor-pointer">
-                  <circle cx={l.midX} cy={l.midY} r={11} fill={C.c2} stroke="#82c582" strokeWidth="1.3" />
-                  <text x={l.midX} y={l.midY} textAnchor="middle" dominantBaseline="central" fill="#82c582" fontSize="16" fontWeight="bold" className="select-none pointer-events-none">+</text>
-                </g>)}
-              </g>);
+              return (
+                <g key={l.id}>
+                  <line x1={l.x} y1={l.y1} x2={l.x} y2={l.y2} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />
+                  {isAdmin && (
+                    <g onClick={e => handleLinkClick(e, l)} className="cursor-pointer">
+                      <circle cx={l.midX} cy={l.midY} r={11} fill={C.c2} stroke="#82c582" strokeWidth="1.3" />
+                      <text x={l.midX} y={l.midY} textAnchor="middle" dominantBaseline="central" fill="#82c582" fontSize="16" fontWeight="bold" className="select-none pointer-events-none">+</text>
+                    </g>
+                  )}
+                </g>
+              );
             }
             if (l.type === "couple") {
-              return (<g key={l.id}>
-                <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={C.link} strokeWidth="1.8" strokeDasharray="5,3" opacity="0.55" />
-                {isAdmin && (<g onClick={e => handleLinkClick(e, l)} className="cursor-pointer">
-                  <circle cx={l.midX} cy={l.midY} r={11} fill={C.c2} stroke="#82c582" strokeWidth="1.3" />
-                  <text x={l.midX} y={l.midY} textAnchor="middle" dominantBaseline="central" fill="#82c582" fontSize="16" fontWeight="bold" className="select-none pointer-events-none">+</text>
-                </g>)}
-              </g>);
+              return (
+                <g key={l.id}>
+                  <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={C.link} strokeWidth="1.8" strokeDasharray="5,3" opacity="0.55" />
+                  {isAdmin && (
+                    <g onClick={e => handleLinkClick(e, l)} className="cursor-pointer">
+                      <circle cx={l.midX} cy={l.midY} r={11} fill={C.c2} stroke="#82c582" strokeWidth="1.3" />
+                      <text x={l.midX} y={l.midY} textAnchor="middle" dominantBaseline="central" fill="#82c582" fontSize="16" fontWeight="bold" className="select-none pointer-events-none">+</text>
+                    </g>
+                  )}
+                </g>
+              );
             }
             if (l.type === "stem") return <line key={l.id} x1={l.x} y1={l.y1} x2={l.x} y2={l.y2} stroke={C.link} strokeWidth="1.6" opacity="0.4" />;
             if (l.type === "hbar") return <line key={l.id} x1={l.x1} y1={l.y} x2={l.x2} y2={l.y} stroke={C.link} strokeWidth="1.6" opacity="0.4" />;
@@ -718,50 +845,60 @@ export default function App() {
           })}
           {data.map(person => {
             const p = finalPos[person.id]; if (!p) return null;
-            return (<g key={person.id} data-node="1">
-              <PersonNode person={person} p={p} isSelected={selected === person.id}
-                isDragging={draggingSubtree?.has(person.id) || false}
-                onClick={() => { if (subtreeDragRef.current?.moved) return; setSelected(s => s === person.id ? null : person.id); }} />
-            </g>);
+            return (
+              <g key={person.id} data-node="1">
+                <PersonNode
+                  person={person}
+                  p={p}
+                  isSelected={selected === person.id}
+                  isDragging={draggingSubtree?.has(person.id) || false}
+                  onClick={() => { if (subtreeDragRef.current?.moved) return; setSelected(s => s === person.id ? null : person.id); }}
+                />
+              </g>
+            );
           })}
         </g>
       </svg>
 
       <AnimatePresence>
         {selPerson && (
-          <PersonPanel person={selPerson} data={data} isAdmin={isAdmin}
+          <PersonPanel
+            person={selPerson}
+            data={data}
+            isAdmin={isAdmin}
             onClose={() => setSelected(null)}
             onAddConjoint={() => setForm({ type: "add-conjoint", targetId: selPerson.id, parentIds: [] })}
             onAddParent={() => setForm({ type: "add-parent", targetId: selPerson.id, parentIds: [] })}
             onAddChild={() => setForm({ type: "add-child", targetId: null, parentIds: [selPerson.id] })}
             onEdit={() => setForm({ type: "edit", targetId: selPerson.id, parentIds: [] })}
-            onDelete={() => setConfirmDelete(selPerson.id)}
-            onSelect={(id) => {
+            onDelete={() => handleDelete(selPerson.id)}
+            onSelect={(id: number) => {
               setSelected(id);
               const p = finalPos[id];
               if (p) setTf(t => ({ ...t, x: -p.x * t.scale, y: -p.y * t.scale }));
-            }} />
+            }}
+          />
         )}
       </AnimatePresence>
 
       {form && <MemberForm config={form} data={data} onSave={handleSave} onClose={() => setForm(null)} />}
 
       <div className="fixed bottom-6 left-6 bg-[#06141B]/90 backdrop-blur-xl border border-[#253745] rounded-2xl p-4 z-50 shadow-2xl">
-        <div className="text-[8px] text-[#4A5C6A] uppercase tracking-[0.2em] mb-4">Légende</div>
+        <div className="text-[8px] text-[#4A5C6A] uppercase tracking-[0.2em] font-sans mb-4">Légende</div>
         <div className="space-y-3">
-          {[["Homme", false], ["Femme", true]].map(([lb, f]) => (
+          {[["Homme", false], ["Femme", true]].map(([lb, f]: any) => (
             <div key={lb} className="flex items-center gap-3">
-              <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border`} style={{ backgroundColor: `${f ? C.female : C.male}25`, borderColor: f ? C.female : C.male }} />
-              <span className="text-[10px] text-[#9BA8AB]">{lb}</span>
+              <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border-1.5`} style={{ backgroundColor: `${f ? C.female : C.male}25`, borderColor: f ? C.female : C.male }} />
+              <span className="text-[10px] text-[#9BA8AB] font-serif">{lb}</span>
             </div>
           ))}
           <div className="flex items-center gap-3">
-            <div className="w-4 h-0 border-t border-dashed border-[#9BA8AB]/40" />
-            <span className="text-[10px] text-[#9BA8AB]">1-2 conjoints</span>
+            <div className="w-4 h-0 border-t-1.5 border-dashed border-[#9BA8AB]/40" />
+            <span className="text-[10px] text-[#9BA8AB] font-serif">1-2 conjoints</span>
           </div>
           <div className="flex items-center gap-3">
             <svg width="16" height="12"><line x1="8" y1="0" x2="0" y2="12" stroke={C.link} strokeWidth="1.5" opacity="0.5" /><line x1="8" y1="0" x2="16" y2="12" stroke={C.link} strokeWidth="1.5" opacity="0.5" /></svg>
-            <span className="text-[10px] text-[#9BA8AB]">3+ conjoints (fan)</span>
+            <span className="text-[10px] text-[#9BA8AB] font-serif">3+ conjoints (fan)</span>
           </div>
         </div>
       </div>
@@ -769,16 +906,30 @@ export default function App() {
       <AnimatePresence>
         {confirmDelete && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#06141B]/80 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#11212D] border border-[#253745] rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#11212D] border border-[#253745] rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+            >
               <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Trash2 className="text-red-500" size={32} />
               </div>
-              <h3 className="text-xl font-bold text-[#CCD0CF] mb-2">Supprimer ce membre ?</h3>
+              <h3 className="text-xl font-display font-bold text-[#CCD0CF] mb-2">Supprimer ce membre ?</h3>
               <p className="text-[#4A5C6A] text-sm mb-8">Cette action est irréversible et retirera cette personne de tous les liens familiaux.</p>
               <div className="flex gap-3">
-                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-3 px-6 rounded-xl bg-[#253745] text-[#9BA8AB] text-sm hover:bg-[#2C3E4A] transition-colors">Annuler</button>
-                <button onClick={executeDelete} className="flex-1 py-3 px-6 rounded-xl bg-red-500 text-white text-sm hover:bg-red-600 transition-colors">Supprimer</button>
+                <button 
+                  onClick={() => setConfirmDelete(null)}
+                  className="flex-1 py-3 px-6 rounded-xl bg-[#253745] text-[#9BA8AB] text-sm font-medium hover:bg-[#2C3E4A] transition-colors"
+                >
+                  Annuler
+                </button>
+                <button 
+                  onClick={executeDelete}
+                  className="flex-1 py-3 px-6 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Supprimer
+                </button>
               </div>
             </motion.div>
           </div>
