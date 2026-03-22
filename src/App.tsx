@@ -1,11 +1,20 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Trash2, Edit2, UserPlus, Users, Save, X, Camera, LogOut, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback, WheelEvent as ReactWheelEvent } from "react";
+import { Plus, Trash2, Edit2, UserPlus, Users, Save, X, Camera, LogOut, ZoomIn, ZoomOut, RefreshCw, Link, MessageSquare, Send, Volume2, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { chatWithFamilyTree, generatePortrait, speakBiography, Person, ChatMessage } from "./services/aiService";
 
 const FAMILY_PWD = "famille2026";
 const ADMIN_PWD = "admin2026";
 
-const C = {
+interface ColorPalette {
+  c1: string; c2: string; c3: string;
+  c4: string; c5: string; c6: string;
+  male: string; female: string;
+  maleL: string; femaleL: string;
+  link: string;
+}
+
+const C: ColorPalette = {
   c1: "#06141B", c2: "#11212D", c3: "#253745",
   c4: "#4A5C6A", c5: "#9BA8AB", c6: "#CCD0CF",
   male: "#4A8FBF", female: "#BF4A6A",
@@ -21,36 +30,36 @@ const FAN_DY = 120;
 // ══════════════════════════════════════════════
 //  API
 // ══════════════════════════════════════════════
-const norm = (m: any) => ({
+const norm = (m: any): Person => ({
   ...m,
   id: Number(m.id),
   parentIds: (Array.isArray(m.parentIds) ? m.parentIds : JSON.parse(m.parentIds || "[]")).map(Number),
   conjointIds: (Array.isArray(m.conjointIds) ? m.conjointIds : JSON.parse(m.conjointIds || "[]")).map(Number),
 });
 
-const apiGet = () => fetch("/api/membres").then(r => r.json()).then(d => d.map(norm));
-const apiAdd = (m: any) => fetch("/api/add-membre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
-const apiUpdate = (m: any) => fetch("/api/update-membre", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
+const apiGet = (): Promise<Person[]> => fetch("/api/membres").then(r => r.json()).then(d => d.map(norm));
+const apiAdd = (m: Partial<Person>) => fetch("/api/add-membre", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
+const apiUpdate = (m: Person) => fetch("/api/update-membre", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(m) }).then(r => r.json());
 const apiDelete = (id: number) => fetch("/api/delete-membre", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then(r => r.json());
 
 // ══════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════
-const nextId = (d: any[]) => Math.max(0, ...d.map(p => p.id)) + 1;
-const initials = (p: any) => `${p.prenom[0]}${p.nom[0]}`.toUpperCase();
-const fmtDate = (s: string) => s ? new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—";
-const isFem = (p: any) => p.genre === "F";
+const nextId = (d: Person[]) => Math.max(0, ...d.map(p => p.id)) + 1;
+const initials = (p: Person) => `${p.prenom[0]}${p.nom[0]}`.toUpperCase();
+const fmtDate = (s: string | null | undefined) => s ? new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—";
+const isFem = (p: Person) => p.genre === "F";
 
-function calcAge(b: string, d: string | null) {
+function calcAge(b: string, d?: string | null) {
   const e = d ? new Date(d) : new Date(), bb = new Date(b);
   let a = e.getFullYear() - bb.getFullYear();
   if (e.getMonth() - bb.getMonth() < 0 || (e.getMonth() === bb.getMonth() && e.getDate() < bb.getDate())) a--;
   return a;
 }
 
-function buildGenMap(data: any[]) {
-  const memo: any = {};
-  function gen(id: number, stk = new Set()) {
+function buildGenMap(data: Person[]) {
+  const memo: Record<number, number> = {};
+  function gen(id: number, stk = new Set<number>()) {
     if (id in memo) return memo[id];
     if (stk.has(id)) return 0;
     const p = data.find(x => x.id === id);
@@ -58,12 +67,12 @@ function buildGenMap(data: any[]) {
     const ns = new Set(stk); ns.add(id);
     let g = 0;
     if (p.parentIds.length) {
-      g = 1 + Math.max(...p.parentIds.map((pid: number) => gen(pid, ns)));
+      g = 1 + Math.max(...p.parentIds.map((pid) => gen(pid, ns)));
     } else if (p.conjointIds.length) {
-      const cg = p.conjointIds.map((cid: number) => {
+      const cg = p.conjointIds.map((cid) => {
         const c = data.find(x => x.id === cid);
         if (!c || ns.has(cid)) return 0;
-        return c.parentIds.length ? 1 + Math.max(...c.parentIds.map((pid: number) => gen(pid, ns))) : 0;
+        return c.parentIds.length ? 1 + Math.max(...c.parentIds.map((pid) => gen(pid, ns))) : 0;
       });
       g = Math.max(0, ...cg);
     }
@@ -73,20 +82,22 @@ function buildGenMap(data: any[]) {
   return memo;
 }
 
-function subtreeOf(rootId: number, data: any[]) {
-  const s = new Set([rootId]);
+function subtreeOf(rootId: number, data: Person[]) {
+  const s = new Set<number>([rootId]);
   let ch = true;
-  while (ch) { ch = false; data.forEach(p => { if (!s.has(p.id) && p.parentIds.some((pid: number) => s.has(pid))) { s.add(p.id); ch = true; } }); }
+  while (ch) { ch = false; data.forEach(p => { if (!s.has(p.id) && p.parentIds.some((pid) => s.has(pid))) { s.add(p.id); ch = true; } }); }
   return s;
 }
 
-function computeLayout(data: any[]) {
+interface Position { x: number; y: number; }
+
+function computeLayout(data: Person[]) {
   if (!data.length) return {};
   const genOf = buildGenMap(data);
   const H_GAP = 220;
   const V_GAP = 200;
-  const BLOCK_MARGIN = 120; // Marge de sécurité augmentée pour éviter tout chevauchement
-  const pos: any = {};
+  const BLOCK_MARGIN = 120;
+  const pos: Record<number, Position> = {};
   const positioned = new Set<number>();
   const memoWidth = new Map<number, number>();
 
@@ -105,13 +116,13 @@ function computeLayout(data: any[]) {
       let totalW = 0;
       p.conjointIds.forEach(sid => {
         const ukids = kids.filter(c => c.parentIds.includes(sid));
-        const spouseWidth = Math.max(H_GAP, ukids.reduce((s: number, k: any) => s + getWidth(k.id), 0));
+        const spouseWidth = Math.max(H_GAP, ukids.reduce((s, k) => s + getWidth(k.id), 0));
         totalW += spouseWidth + BLOCK_MARGIN;
       });
       memoWidth.set(id, totalW);
       return totalW;
     }
-    const unionGroups: any[] = [];
+    const unionGroups: { sid: number | null, kids: Person[] }[] = [];
     p.conjointIds.forEach(sid => {
       const ukids = kids.filter(c => c.parentIds.includes(sid));
       unionGroups.push({ sid, kids: ukids });
@@ -121,7 +132,7 @@ function computeLayout(data: any[]) {
     if (unionGroups.length === 0) { memoWidth.set(id, H_GAP); return H_GAP; }
     let totalW = 0;
     unionGroups.forEach(group => {
-      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
       totalW += Math.max(H_GAP * 2, ukw) + BLOCK_MARGIN;
     });
     memoWidth.set(id, totalW);
@@ -143,16 +154,15 @@ function computeLayout(data: any[]) {
         const s = data.find(x => x.id === sid);
         if (!s) return;
         const ukids = kids.filter(c => c.parentIds.includes(sid));
-        const ukw = ukids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
+        const ukw = ukids.reduce((s, k) => s + getWidth(k.id), 0);
         const spouseWidth = Math.max(H_GAP, ukw);
         const spouseX = curX + spouseWidth / 2;
-        // Placer les épouses à mi-chemin entre les générations pour éviter l'overlap avec les enfants
         if (!positioned.has(s.id)) { 
           pos[s.id] = { x: spouseX, y: pos[id].y + V_GAP * 0.5 }; 
           positioned.add(s.id); 
         }
         let kX = spouseX - ukw / 2;
-        ukids.forEach((k: any) => {
+        ukids.forEach((k) => {
           const kw = getWidth(k.id);
           layout(k.id, kX + kw / 2, yOffset);
           kX += kw;
@@ -161,7 +171,7 @@ function computeLayout(data: any[]) {
       });
       return;
     }
-    const unionGroups: any[] = [];
+    const unionGroups: { spouse: Person | null, kids: Person[] }[] = [];
     p.conjointIds.forEach(sid => {
       const s = data.find(x => x.id === sid);
       if (!s) return;
@@ -175,14 +185,14 @@ function computeLayout(data: any[]) {
     let personX = centerX - blockWidth / 2;
     for (let i = 0; i < midIdx; i++) {
       const group = unionGroups[i];
-      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
       personX += Math.max(H_GAP * 2, ukw) + BLOCK_MARGIN;
     }
     pos[id] = { x: personX, y: (genOf[id] * V_GAP) + yOffset };
     positioned.add(id);
     let xOffset = centerX - blockWidth / 2;
     unionGroups.forEach((group, i) => {
-      const ukw = group.kids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
+      const ukw = group.kids.reduce((s, k) => s + getWidth(k.id), 0);
       const uw = Math.max(H_GAP * 2, ukw);
       if (i === midIdx) xOffset = personX;
       if (group.spouse) {
@@ -190,10 +200,10 @@ function computeLayout(data: any[]) {
         if (!positioned.has(group.spouse.id)) { pos[group.spouse.id] = { x: spouseX, y: (genOf[group.spouse.id] * V_GAP) + yOffset }; positioned.add(group.spouse.id); }
         const pairMid = (pos[id].x + pos[group.spouse.id].x) / 2;
         let kX = pairMid - ukw / 2;
-        group.kids.forEach((k: any) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
+        group.kids.forEach((k) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
       } else {
         let kX = xOffset + uw / 2 - ukw / 2;
-        group.kids.forEach((k: any) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
+        group.kids.forEach((k) => { const kw = getWidth(k.id); layout(k.id, kX + kw / 2, yOffset); kX += kw; });
       }
       xOffset += uw + BLOCK_MARGIN;
     });
@@ -223,7 +233,7 @@ function computeLayout(data: any[]) {
 }
 
 
-function buildLinks(data: any[], pos: any) {
+function buildLinks(data: Person[], pos: Record<number, Position>) {
   const links: any[] = [], seenCouple = new Set<string>();
 
   data.forEach(p => {
@@ -231,11 +241,11 @@ function buildLinks(data: any[], pos: any) {
     if (isPat) {
       const pa = pos[p.id];
       if (!pa) return;
-      const wives = p.conjointIds.map((cid: number) => ({ id: cid, p: pos[cid] })).filter(x => x.p);
+      const wives = p.conjointIds.map((cid) => ({ id: cid, p: pos[cid] })).filter(x => x.p);
       if (!wives.length) return;
 
       const stemY = pa.y + R;
-      const barY = pa.y + V_GAP * 0.25;
+      const barY = pa.y + V_GAP * 0.3;
       links.push({ type: "fan-stem", id: `fstem-${p.id}`, x: pa.x, y1: stemY, y2: barY });
       const xs = wives.map(w => w.p.x);
       links.push({ type: "fan-hbar", id: `fhbar-${p.id}`, x1: Math.min(...xs), x2: Math.max(...xs), y: barY });
@@ -252,11 +262,10 @@ function buildLinks(data: any[], pos: any) {
           midY: (barY + w.p.y - R) / 2 
         });
       });
-      // Marquer les couples comme vus pour ne pas dessiner les liens standards
-      p.conjointIds.forEach((cid: number) => seenCouple.add(`${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`));
+      p.conjointIds.forEach((cid) => seenCouple.add(`${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`));
     }
 
-    p.conjointIds.forEach((cid: number) => {
+    p.conjointIds.forEach((cid) => {
       const key = `${Math.min(p.id, cid)}-${Math.max(p.id, cid)}`;
       if (seenCouple.has(key)) return; seenCouple.add(key);
       const a = pos[p.id], b = pos[cid];
@@ -266,26 +275,25 @@ function buildLinks(data: any[], pos: any) {
     });
   });
 
-  const famMap = new Map();
+  const famMap = new Map<string, { pids: number[], children: Person[] }>();
   data.forEach(c => {
     if (!c.parentIds.length) return;
     const key = [...c.parentIds].sort((a, b) => a - b).join("-");
     if (!famMap.has(key)) famMap.set(key, { pids: [...c.parentIds].sort((a, b) => a - b), children: [] });
-    famMap.get(key).children.push(c);
+    famMap.get(key)!.children.push(c);
   });
 
   let famIdx = 0;
   famMap.forEach(({ pids, children }) => {
-    const vk = children.filter((c: any) => pos[c.id]);
+    const vk = children.filter((c) => pos[c.id]);
     if (!vk.length) return;
-    const isPatUnion = pids.some(pid => data.find(x => x.id === pid)?.conjointIds.length >= 3);
+    const isPatUnion = pids.some(pid => data.find(x => x.id === pid)?.conjointIds.length! >= 3);
 
-    let stemX, stemTopY;
+    let stemX: number, stemTopY: number;
     if (pids.length === 2 && pos[pids[0]] && pos[pids[1]]) {
       const p1 = pos[pids[0]], p2 = pos[pids[1]];
-      // Si c'est une union de patriarche, le lien part de la femme (qui est en dessous)
       if (isPatUnion) {
-        const wifeId = pids.find(pid => data.find(x => x.id === pid)?.conjointIds.length < 3) || pids[0];
+        const wifeId = pids.find(pid => data.find(x => x.id === pid)?.conjointIds.length! < 3) || pids[0];
         stemX = pos[wifeId].x;
         stemTopY = pos[wifeId].y + R;
       } else {
@@ -303,9 +311,9 @@ function buildLinks(data: any[], pos: any) {
     famIdx++;
     const famId = pids.join("-");
     links.push({ type: "stem", id: `stem-${famId}`, x: stemX, y1: stemTopY, y2: midY });
-    const xs = vk.map((c: any) => pos[c.id].x);
+    const xs = vk.map((c) => pos[c.id].x);
     links.push({ type: "hbar", id: `hbar-${famId}`, x1: vk.length > 1 ? Math.min(...xs) : stemX, x2: vk.length > 1 ? Math.max(...xs) : stemX, y: midY });
-    vk.forEach((c: any) => links.push({ type: "branch", id: `br-${c.id}`, x: pos[c.id].x, y1: midY, y2: pos[c.id].y - R }));
+    vk.forEach((c) => links.push({ type: "branch", id: `br-${c.id}`, x: pos[c.id].x, y1: midY, y2: pos[c.id].y - R }));
   });
   return links;
 }
@@ -322,21 +330,123 @@ function Spinner({ text = "Chargement..." }) {
   );
 }
 
-function MemberForm({ config, data, onSave, onClose }: any) {
+function Chatbot({ data, onClose }: { data: Person[], onClose: () => void }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "model", text: "Bonjour ! Je suis votre assistant généalogique. Comment puis-je vous aider aujourd'hui ?" }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = { role: "user", text: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await chatWithFamilyTree(data, input, messages);
+      setMessages(prev => [...prev, { role: "model", text: response }]);
+    } catch (error) {
+      console.error("Chatbot error:", error);
+      setMessages(prev => [...prev, { role: "model", text: "Désolé, j'ai rencontré une erreur. Réessayez plus tard." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.95 }}
+      className="fixed bottom-24 right-6 w-80 h-[450px] bg-[#11212D] border border-[#253745] rounded-2xl shadow-2xl z-[600] flex flex-col overflow-hidden"
+    >
+      <div className="p-4 border-b border-[#253745] bg-[#06141B] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles className="text-[#4A8FBF]" size={18} />
+          <span className="text-sm font-display font-bold text-[#CCD0CF]">Assistant IA</span>
+        </div>
+        <button onClick={onClose} className="text-[#4A5C6A] hover:text-white transition-colors"><X size={18} /></button>
+      </div>
+      
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[85%] p-3 rounded-2xl text-xs font-serif ${m.role === "user" ? "bg-[#4A8FBF] text-white rounded-tr-none" : "bg-[#253745] text-[#9BA8AB] rounded-tl-none"}`}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-[#253745] p-3 rounded-2xl rounded-tl-none flex gap-1">
+              <div className="w-1.5 h-1.5 bg-[#4A5C6A] rounded-full animate-bounce" />
+              <div className="w-1.5 h-1.5 bg-[#4A5C6A] rounded-full animate-bounce [animation-delay:0.2s]" />
+              <div className="w-1.5 h-1.5 bg-[#4A5C6A] rounded-full animate-bounce [animation-delay:0.4s]" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-[#253745] bg-[#06141B] flex gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleSend()}
+          placeholder="Posez une question..."
+          className="flex-1 bg-[#11212D] border border-[#253745] rounded-xl px-3 py-2 text-xs text-[#CCD0CF] outline-none focus:border-[#4A8FBF]"
+        />
+        <button onClick={handleSend} disabled={loading || !input.trim()} className="w-9 h-9 bg-[#4A8FBF] rounded-xl flex items-center justify-center text-white hover:bg-[#5A9FCF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <Send size={16} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+interface MemberFormProps {
+  config: { type: string; targetId?: number };
+  data: Person[];
+  onSave: (fd: Partial<Person>) => Promise<void>;
+  onClose: () => void;
+}
+
+function MemberForm({ config, data, onSave, onClose }: MemberFormProps) {
   const { type, targetId } = config;
-  const src = type === "edit" ? data.find((p: any) => p.id === targetId) : null;
-  const [f, setF] = useState({ prenom: src?.prenom || "", nom: src?.nom || "", naissance: src?.naissance || "", deces: src?.deces || "", bio: src?.bio || "", genre: src?.genre || "M", photo: src?.photo || null });
+  const src = type === "edit" ? data.find((p) => p.id === targetId) : null;
+  const [f, setF] = useState<Partial<Person>>({ prenom: src?.prenom || "", nom: src?.nom || "", naissance: src?.naissance || "", deces: src?.deces || "", bio: src?.bio || "", genre: src?.genre || "M", photo: src?.photo || null });
   const [saving, setSaving] = useState(false);
-  const set = (k: string, v: any) => setF(x => ({ ...x, [k]: v }));
-  const canSave = f.prenom.trim() && f.nom.trim() && f.naissance;
+  const [generating, setGenerating] = useState(false);
+  const set = (k: keyof Person, v: any) => setF((x) => ({ ...x, [k]: v }));
+  const canSave = f.prenom?.trim() && f.nom?.trim() && f.naissance;
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handlePhoto = (e: any) => {
-    const file = e.target.files[0];
+  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
     const r = new FileReader();
     r.onload = ev => set("photo", ev.target?.result);
     r.readAsDataURL(file);
+  };
+
+  const handleGeneratePortrait = async () => {
+    if (!f.prenom || !f.nom || !f.naissance) {
+      alert("Veuillez remplir le prénom, le nom et la date de naissance pour générer un portrait.");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const photo = await generatePortrait(f);
+      if (photo) set("photo", photo);
+    } catch (error) {
+      console.error("Portrait generation error:", error);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -346,7 +456,7 @@ function MemberForm({ config, data, onSave, onClose }: any) {
     setSaving(false);
   };
 
-  const titles: any = { "add-conjoint": "💑 Ajouter un(e) conjoint(e)", "add-child": "👶 Ajouter un enfant", "add-parent": "👴 Ajouter un parent", "edit": "✏️ Modifier" };
+  const titles = { "add-conjoint": "💑 Ajouter un(e) conjoint(e)", "add-child": "👶 Ajouter un enfant", "add-parent": "👴 Ajouter un parent", "edit": "✏️ Modifier" };
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -369,6 +479,14 @@ function MemberForm({ config, data, onSave, onClose }: any) {
             <span className="text-xs text-[#9BA8AB] font-serif">Photo de profil</span>
             <div className="flex items-center gap-2">
               <button onClick={() => fileRef.current?.click()} className="px-3 py-1 bg-[#253745] border border-[#4A5C6A] rounded-md text-[10px] text-[#9BA8AB] hover:text-white transition-colors">Importer</button>
+              <button 
+                onClick={handleGeneratePortrait} 
+                disabled={generating}
+                className="px-3 py-1 bg-[#4A8FBF]/10 border border-[#4A8FBF]/30 rounded-md text-[10px] text-[#4A8FBF] hover:bg-[#4A8FBF]/20 transition-all flex items-center gap-1"
+              >
+                {generating ? <RefreshCw className="animate-spin" size={10} /> : <Sparkles size={10} />}
+                {generating ? "Génération..." : "IA Portrait"}
+              </button>
             </div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
@@ -388,7 +506,7 @@ function MemberForm({ config, data, onSave, onClose }: any) {
         <div className="mb-4">
           <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans mb-1 block">Genre *</label>
           <div className="flex gap-2">
-            {[["M", "Homme", C.male], ["F", "Femme", C.female]].map(([v, lb, col]: any) => (
+            {[["M", "Homme", C.male], ["F", "Femme", C.female]].map(([v, lb, col]) => (
               <button
                 key={v}
                 onClick={() => set("genre", v)}
@@ -433,7 +551,15 @@ function MemberForm({ config, data, onSave, onClose }: any) {
   );
 }
 
-function PersonNode({ person, p, isSelected, isDragging, onClick }: any) {
+interface PersonNodeProps {
+  person: Person;
+  p: Position;
+  isSelected: boolean;
+  isDragging: boolean;
+  onClick: () => void;
+}
+
+function PersonNode({ person, p, isSelected, isDragging, onClick }: PersonNodeProps) {
   const fem = isFem(person), col = fem ? C.female : C.male, colL = fem ? C.femaleL : C.maleL;
   const dead = !!person.deces, { x, y } = p;
   return (
@@ -455,13 +581,28 @@ function PersonNode({ person, p, isSelected, isDragging, onClick }: any) {
   );
 }
 
-function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParent, onAddChild, onEdit, onDelete, onSelect }: any) {
+interface PersonPanelProps {
+  person: Person;
+  data: Person[];
+  isAdmin: boolean;
+  onClose: () => void;
+  onAddConjoint: () => void;
+  onAddParent: () => void;
+  onAddChild: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSelect: (id: number) => void;
+  onLink: () => void;
+  onUpdate: (p: Person) => void;
+}
+
+function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParent, onAddChild, onEdit, onDelete, onSelect, onLink, onUpdate }: PersonPanelProps) {
   const fem = isFem(person), col = fem ? C.female : C.male;
   const dead = !!person.deces, age = calcAge(person.naissance, person.deces);
-  const conjoints = person.conjointIds.map((id: number) => data.find((p: any) => p.id === id)).filter(Boolean);
-  const parents = person.parentIds.map((id: number) => data.find((p: any) => p.id === id)).filter(Boolean);
+  const conjoints = person.conjointIds.map((id) => data.find((p) => p.id === id)).filter(Boolean);
+  const parents = person.parentIds.map((id) => data.find((p) => p.id === id)).filter(Boolean);
   const children = data.filter(p => p.parentIds.includes(person.id));
-  const allSiblings = data.filter(p => p.id !== person.id && p.parentIds.some((pid: number) => person.parentIds.includes(pid)));
+  const allSiblings = data.filter(p => p.id !== person.id && p.parentIds.some((pid) => person.parentIds.includes(pid)));
   
   const fullSiblings = allSiblings.filter(s => 
     s.parentIds.length === person.parentIds.length && 
@@ -469,7 +610,42 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
   );
   
   const halfSiblings = allSiblings.filter(s => !fullSiblings.includes(s));
-  const grandchildren = data.filter(p => p.parentIds.some((pid: number) => children.map(c => c.id).includes(pid)));
+  const grandchildren = data.filter(p => p.parentIds.some((pid) => children.map(c => c.id).includes(pid)));
+
+  const [speaking, setSpeaking] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const handleSpeak = async () => {
+    if (!person.bio || speaking) return;
+    setSpeaking(true);
+    try {
+      const audioUrl = await speakBiography(person.bio);
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        audio.onended = () => setSpeaking(false);
+        audio.play();
+      } else {
+        setSpeaking(false);
+      }
+    } catch (error) {
+      console.error("TTS error:", error);
+      setSpeaking(false);
+    }
+  };
+
+  const handleGeneratePortrait = async () => {
+    setGenerating(true);
+    try {
+      const photo = await generatePortrait(person);
+      if (photo) {
+        onUpdate({ ...person, photo });
+      }
+    } catch (error) {
+      console.error("Portrait generation error:", error);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   return (
     <motion.div
@@ -486,7 +662,7 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
           </div>
           <div>
             <div className="font-display font-bold text-[#CCD0CF] leading-tight flex items-center gap-2">
-              {person.prenom}
+              {person.prenom} <span className="text-[9px] text-[#4A5C6A]">#{person.id}</span>
             </div>
             <div className="text-xs font-serif" style={{ color: col }}>{person.nom}</div>
             {dead && <div className="text-[9px] text-[#4A5C6A] mt-1">✝ Décédé(e) · {age} ans</div>}
@@ -507,16 +683,32 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
 
         {person.bio && (
           <div>
-            <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-1.5 block">Biographie</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans block">Biographie</label>
+              <button 
+                onClick={handleSpeak} 
+                disabled={speaking}
+                className={`p-1 rounded-md transition-colors ${speaking ? "text-[#4A8FBF] bg-[#4A8FBF]/10" : "text-[#4A5C6A] hover:text-[#9BA8AB] hover:bg-[#253745]"}`}
+              >
+                <Volume2 size={14} className={speaking ? "animate-pulse" : ""} />
+              </button>
+            </div>
             <p className="text-xs text-[#9BA8AB] leading-relaxed font-serif">{person.bio}</p>
           </div>
         )}
 
-        {[[`💑 Conjoint(e)${conjoints.length > 1 ? "s" : ""}`, conjoints], ["👨‍👩‍👧 Parents", parents], [`👶 Enfants (${children.length})`, children], [`🍼 Petits-Enfants (${grandchildren.length})`, grandchildren], [`👥 Frères & Sœurs`, fullSiblings], [`👥 Demi-Frères & Sœurs`, halfSiblings]].filter(([, m]) => m.length > 0).map(([lb, members]) => (
+        {( [
+          [`💑 Conjoint(e)${conjoints.length > 1 ? "s" : ""}`, conjoints],
+          ["👨‍👩‍👧 Parents", parents],
+          [`👶 Enfants (${children.length})`, children],
+          [`🍼 Petits-Enfants (${grandchildren.length})`, grandchildren],
+          [`👥 Frères & Sœurs`, fullSiblings],
+          [`👥 Demi-Frères & Sœurs`, halfSiblings]
+        ] as [string, Person[]][]).filter(([, m]) => m.length > 0).map(([lb, members]) => (
           <div key={lb}>
             <label className="text-[9px] text-[#4A5C6A] uppercase tracking-widest font-sans mb-2 block">{lb}</label>
             <div className="flex flex-wrap gap-1.5">
-              {members.map((m: any) => (
+              {members.map((m: Person) => (
                 <button 
                   key={m.id} 
                   onClick={() => onSelect(m.id)}
@@ -536,6 +728,13 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
               <AdminBtn onClick={onAddConjoint} icon={<UserPlus size={14} />} text="Ajouter conjoint(e)" color="#9BA8AB" />
               <AdminBtn onClick={onAddParent} icon={<Users size={14} />} text="Ajouter parent" color="#a89bd4" />
               <AdminBtn onClick={onAddChild} icon={<Plus size={14} />} text="Ajouter un enfant" color="#82c582" />
+              <AdminBtn onClick={onLink} icon={<Link size={14} />} text="Lier à un membre existant" color="#9BA8AB" />
+              <AdminBtn 
+                onClick={handleGeneratePortrait} 
+                icon={generating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />} 
+                text={generating ? "Génération..." : "Générer un portrait IA"} 
+                color="#4A8FBF" 
+              />
               <AdminBtn onClick={onEdit} icon={<Edit2 size={14} />} text="Modifier" color="#4A8FBF" />
               <AdminBtn onClick={onDelete} icon={<Trash2 size={14} />} text="Supprimer" color="#BF4A4A" danger />
             </div>
@@ -546,7 +745,15 @@ function PersonPanel({ person, data, isAdmin, onClose, onAddConjoint, onAddParen
   );
 }
 
-function AdminBtn({ onClick, icon, text, color, danger }: any) {
+interface AdminBtnProps {
+  onClick: () => void | Promise<void>;
+  icon: React.ReactNode;
+  text: string;
+  color?: string;
+  danger?: boolean;
+}
+
+function AdminBtn({ onClick, icon, text, color, danger }: AdminBtnProps) {
   return (
     <button
       onClick={onClick}
@@ -558,7 +765,7 @@ function AdminBtn({ onClick, icon, text, color, danger }: any) {
   );
 }
 
-function LoginScreen({ onLogin }: any) {
+function LoginScreen({ onLogin }: { onLogin: (role: "family" | "admin") => void }) {
   const [pwd, setPwd] = useState(""), [err, setErr] = useState(false), [shake, setShake] = useState(false);
   const go = () => {
     if (pwd === FAMILY_PWD) { onLogin("family"); return; }
@@ -590,7 +797,7 @@ function LoginScreen({ onLogin }: any) {
         </div>
 
         <div className="mt-8 flex justify-center gap-6">
-          {[["Homme", false], ["Femme", true]].map(([lb, f]: any) => (
+          {[["Homme", false], ["Femme", true]].map(([lb, f]) => (
             <div key={lb} className="flex items-center gap-2">
               <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border-1.5`} style={{ backgroundColor: `${f ? C.female : C.male}30`, borderColor: f ? C.female : C.male }} />
               <span className="text-[10px] text-[#4A5C6A] font-sans uppercase tracking-wider">{lb}</span>
@@ -606,21 +813,22 @@ function LoginScreen({ onLogin }: any) {
 //  MAIN APP
 // ══════════════════════════════════════════════
 export default function App() {
-  const [mode, setMode] = useState<string | null>(null);
-  const [data, setData] = useState<any[]>([]);
+  const [mode, setMode] = useState(null);
+  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [form, setForm] = useState<any>(null);
+  const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState(null);
   const [tf, setTf] = useState({ x: 0, y: 0, scale: 1 });
-  const [panDrag, setPanDrag] = useState<any>(null);
+  const [panDrag, setPanDrag] = useState(null);
   const [svgW, setSvgW] = useState(window.innerWidth);
-  const [offsets, setOffsets] = useState<any>({});
+  const [offsets, setOffsets] = useState({});
   const [search, setSearch] = useState("");
-  const subtreeDragRef = useRef<any>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const subtreeDragRef = useRef(null);
+  const svgRef = useRef(null);
 
   const basePos = computeLayout(data);
-  const finalPos: any = {};
+  const finalPos = {};
   Object.keys(basePos).forEach(id => {
     const nid = Number(id), off = offsets[nid] || { dx: 0, dy: 0 };
     finalPos[nid] = { x: basePos[nid].x + off.dx, y: basePos[nid].y + off.dy };
@@ -636,7 +844,7 @@ export default function App() {
     ? data.filter(p => `${p.prenom} ${p.nom}`.toLowerCase().includes(search.toLowerCase()))
     : [];
 
-  const handleSearchSelect = (person: any) => {
+  const handleSearchSelect = (person) => {
     setSelected(person.id);
     setSearch("");
     // Centrer la vue sur la personne
@@ -658,7 +866,7 @@ export default function App() {
     return () => window.removeEventListener("resize", upd);
   }, []);
 
-  const onWheel = useCallback((e: WheelEvent) => {
+  const onWheel = useCallback((e) => {
     e.preventDefault();
     setTf(t => ({ ...t, scale: Math.min(3, Math.max(0.15, t.scale * (e.deltaY < 0 ? 1.1 : 0.91))) }));
   }, []);
@@ -669,30 +877,30 @@ export default function App() {
     return () => el?.removeEventListener("wheel", onWheel);
   }, [onWheel]);
 
-  const toSvg = useCallback((cx: number, cy: number) => {
+  const toSvg = useCallback((cx, cy) => {
     const ox = (svgW - (panelOpen ? 280 : 0)) / 2;
     return { sx: (cx - ox - tf.x) / tf.scale, sy: (cy - 90 - tf.y) / tf.scale };
   }, [svgW, panelOpen, tf]);
 
-  const onMD = useCallback((e: any) => {
-    if (isAdmin && (e.target as any).dataset.fanwife) {
-      const wifId = Number((e.target as any).dataset.fanwife);
+  const onMD = useCallback((e) => {
+    if (isAdmin && e.target.dataset.fanwife) {
+      const wifId = Number(e.target.dataset.fanwife);
       const subtree = subtreeOf(wifId, data);
       const { sx, sy } = toSvg(e.clientX, e.clientY);
       subtreeDragRef.current = { wifId, subtree, sx0: sx, sy0: sy, moved: false, baseOff: { ...offsets } };
       e.stopPropagation(); return;
     }
-    if ((e.target as HTMLElement).closest("[data-node]")) return;
+    if (e.target.closest("[data-node]")) return;
     setPanDrag({ sx: e.clientX - tf.x, sy: e.clientY - tf.y });
   }, [isAdmin, data, offsets, toSvg, tf]);
 
-  const onMM = useCallback((e: any) => {
+  const onMM = useCallback((e) => {
     if (subtreeDragRef.current) {
       const { sx, sy } = toSvg(e.clientX, e.clientY);
       const dx = sx - subtreeDragRef.current.sx0, dy = sy - subtreeDragRef.current.sy0;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) subtreeDragRef.current.moved = true;
       const next = { ...subtreeDragRef.current.baseOff };
-      subtreeDragRef.current.subtree.forEach((id: number) => {
+      subtreeDragRef.current.subtree.forEach((id) => {
         const b = subtreeDragRef.current.baseOff[id] || { dx: 0, dy: 0 };
         next[id] = { dx: b.dx + dx, dy: b.dy + dy };
       });
@@ -703,7 +911,7 @@ export default function App() {
 
   const onMU = useCallback(() => { subtreeDragRef.current = null; setPanDrag(null); }, []);
 
-  const handleSave = async (fd: any) => {
+  const handleSave = async (fd) => {
     if (!form) return;
     const { type, targetId, parentIds } = form;
     if (type === "edit") {
@@ -733,9 +941,33 @@ export default function App() {
     setForm(null);
   };
 
-  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [showLinkModal, setShowLinkModal] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const handleDelete = async (id: number) => {
+  const handleLink = async (targetId, type) => {
+    if (!selected) return;
+    const p1 = data.find(x => x.id === selected);
+    const p2 = data.find(x => x.id === targetId);
+    if (!p1 || !p2) return;
+
+    const u1 = { ...p1 }, u2 = { ...p2 };
+    if (type === "conjoint") {
+      if (!u1.conjointIds.includes(p2.id)) u1.conjointIds.push(p2.id);
+      if (!u2.conjointIds.includes(p1.id)) u2.conjointIds.push(p1.id);
+    } else if (type === "parent") {
+      if (!u1.parentIds.includes(p2.id)) u1.parentIds.push(p2.id);
+    } else if (type === "enfant") {
+      if (!u2.parentIds.includes(p1.id)) u2.parentIds.push(p1.id);
+    }
+
+    await apiUpdate(u1);
+    await apiUpdate(u2);
+    const d = await apiGet();
+    setData(d);
+    setShowLinkModal(null);
+  };
+
+  const handleDelete = async (id) => {
     setConfirmDelete(id);
   };
 
@@ -745,14 +977,14 @@ export default function App() {
     await apiDelete(id);
     setData(d => d.filter(p => p.id !== id).map(p => ({
       ...p,
-      conjointIds: p.conjointIds.filter((c: number) => c !== id),
-      parentIds: p.parentIds.filter((c: number) => c !== id),
+      conjointIds: p.conjointIds.filter((c) => c !== id),
+      parentIds: p.parentIds.filter((c) => c !== id),
     })));
     setConfirmDelete(null);
     setSelected(null);
   };
 
-  const handleLinkClick = (e: any, link: any) => {
+  const handleLinkClick = (e, link) => {
     if (!isAdmin) return;
     if (subtreeDragRef.current?.moved) return;
     e.stopPropagation();
@@ -816,7 +1048,7 @@ export default function App() {
 
       <svg ref={svgRef} className={`flex-1 ${subtreeDragRef.current || panDrag ? "cursor-grabbing" : "cursor-grab"}`} onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}>
         <g transform={`translate(${cx_val + tf.x},${90 + tf.y}) scale(${tf.scale})`}>
-          {links.map((l: any) => {
+          {links.map((l) => {
             if (l.type === "fan-stem") return <line key={l.id} x1={l.x} y1={l.y1} x2={l.x} y2={l.y2} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />;
             if (l.type === "fan-hbar") return <line key={l.id} x1={l.x1} y1={l.y} x2={l.x2} y2={l.y} stroke={C.link} strokeWidth="1.6" opacity="0.4" strokeDasharray="4 2" />;
             if (l.type === "fan-branch") {
@@ -877,9 +1109,14 @@ export default function App() {
             onAddConjoint={() => setForm({ type: "add-conjoint", targetId: selPerson.id, parentIds: [] })}
             onAddParent={() => setForm({ type: "add-parent", targetId: selPerson.id, parentIds: [] })}
             onAddChild={() => setForm({ type: "add-child", targetId: null, parentIds: [selPerson.id] })}
+            onLink={() => setShowLinkModal(selPerson.id)}
             onEdit={() => setForm({ type: "edit", targetId: selPerson.id, parentIds: [] })}
             onDelete={() => handleDelete(selPerson.id)}
-            onSelect={(id: number) => {
+            onUpdate={async (u) => {
+              await apiUpdate(u);
+              setData(d => d.map(p => p.id === u.id ? u : p));
+            }}
+            onSelect={(id) => {
               setSelected(id);
               const p = finalPos[id];
               if (p) setTf(t => ({ ...t, x: -p.x * t.scale, y: -p.y * t.scale }));
@@ -889,11 +1126,23 @@ export default function App() {
       </AnimatePresence>
 
       {form && <MemberForm config={form} data={data} onSave={handleSave} onClose={() => setForm(null)} />}
+      {showLinkModal && <LinkModal personId={showLinkModal} data={data} onLink={handleLink} onClose={() => setShowLinkModal(null)} />}
+
+      <button
+        onClick={() => setChatOpen(!chatOpen)}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-[#4A8FBF] rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-110 active:scale-95 transition-all z-[500]"
+      >
+        {chatOpen ? <X size={24} /> : <MessageSquare size={24} />}
+      </button>
+
+      <AnimatePresence>
+        {chatOpen && <Chatbot data={data} onClose={() => setChatOpen(false)} />}
+      </AnimatePresence>
 
       <div className="fixed bottom-6 left-6 bg-[#06141B]/90 backdrop-blur-xl border border-[#253745] rounded-2xl p-4 z-50 shadow-2xl">
         <div className="text-[8px] text-[#4A5C6A] uppercase tracking-[0.2em] font-sans mb-4">Légende</div>
         <div className="space-y-3">
-          {[["Homme", false], ["Femme", true]].map(([lb, f]: any) => (
+          {[["Homme", false], ["Femme", true]].map(([lb, f]) => (
             <div key={lb} className="flex items-center gap-3">
               <div className={`w-3 h-3 ${f ? "rounded-full" : "rounded-sm"} border-1.5`} style={{ backgroundColor: `${f ? C.female : C.male}25`, borderColor: f ? C.female : C.male }} />
               <span className="text-[10px] text-[#9BA8AB] font-serif">{lb}</span>
@@ -942,6 +1191,75 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+interface LinkModalProps {
+  personId: number;
+  data: Person[];
+  onLink: (targetId: number, type: string) => void;
+  onClose: () => void;
+}
+
+function LinkModal({ personId, data, onLink, onClose }: LinkModalProps) {
+  const [targetId, setTargetId] = useState(null);
+  const [type, setType] = useState("conjoint");
+  const p = data.find((x) => x.id === personId);
+  const others = data.filter((x) => x.id !== personId).sort((a, b) => a.prenom.localeCompare(b.prenom));
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-[600] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[#11212D] border border-[#253745] rounded-2xl p-6 w-full max-w-md shadow-2xl"
+      >
+        <h2 className="text-lg font-display font-bold text-[#CCD0CF] mb-4">Lier {p?.prenom} à...</h2>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans mb-1 block">Type de relation</label>
+            <div className="flex gap-2">
+              {[["conjoint", "Conjoint(e)"], ["parent", "Parent"], ["enfant", "Enfant"]].map(([v, lb]) => (
+                <button
+                  key={v}
+                  onClick={() => setType(v)}
+                  className={`flex-1 py-2 rounded-lg border text-[10px] transition-all ${type === v ? "border-[#4A8FBF] bg-[#4A8FBF]/10 text-[#4A8FBF]" : "border-[#253745] bg-[#06141B] text-[#4A5C6A]"}`}
+                >
+                  {lb}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-[#4A5C6A] uppercase tracking-wider font-sans mb-1 block">Choisir un membre</label>
+            <select 
+              value={targetId || ""} 
+              onChange={e => setTargetId(Number(e.target.value))}
+              className="w-full bg-[#06141B] border border-[#253745] rounded-lg p-2 text-sm text-[#CCD0CF] outline-none focus:border-[#4A8FBF]"
+            >
+              <option value="">Sélectionner...</option>
+              {others.map((o) => (
+                <option key={o.id} value={o.id}>{o.prenom} {o.nom} (#{o.id})</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-[#253745] text-[#9BA8AB] text-sm hover:text-white transition-colors">Annuler</button>
+            <button
+              onClick={() => targetId && onLink(targetId, type)}
+              disabled={!targetId}
+              className={`flex-[2] py-2.5 rounded-xl font-display font-bold text-sm transition-all ${targetId ? "bg-[#4A8FBF] text-white hover:bg-[#5A9FCF]" : "bg-[#253745] text-[#4A5C6A] cursor-not-allowed"}`}
+            >
+              Créer le lien
+            </button>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
