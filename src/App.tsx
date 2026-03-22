@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, Edit2, UserPlus, Users, Save, X, Camera, LogOut, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 
 const FAMILY_PWD = "famille2026";
 const ADMIN_PWD = "admin2026";
@@ -146,11 +146,15 @@ function computeLayout(data: any[]) {
         const ukw = ukids.reduce((s: number, k: any) => s + getWidth(k.id), 0);
         const spouseWidth = Math.max(H_GAP, ukw);
         const spouseX = curX + spouseWidth / 2;
-        if (!positioned.has(s.id)) { pos[s.id] = { x: spouseX, y: pos[id].y + V_GAP }; positioned.add(s.id); }
+        // Placer les épouses à mi-chemin entre les générations pour éviter l'overlap avec les enfants
+        if (!positioned.has(s.id)) { 
+          pos[s.id] = { x: spouseX, y: pos[id].y + V_GAP * 0.5 }; 
+          positioned.add(s.id); 
+        }
         let kX = spouseX - ukw / 2;
         ukids.forEach((k: any) => {
           const kw = getWidth(k.id);
-          layout(k.id, kX + kw / 2, yOffset + V_GAP);
+          layout(k.id, kX + kw / 2, yOffset);
           kX += kw;
         });
         curX += spouseWidth + BLOCK_MARGIN;
@@ -196,6 +200,9 @@ function computeLayout(data: any[]) {
   }
 
   const roots = data.filter(p => p.parentIds.length === 0);
+  // Prioriser les patriarches pour qu'ils organisent leur famille en premier
+  roots.sort((a, b) => (isPatriarch(b.id) ? 1 : 0) - (isPatriarch(a.id) ? 1 : 0));
+  
   let globalX = 0;
   roots.forEach(r => {
     if (!positioned.has(r.id)) {
@@ -228,7 +235,7 @@ function buildLinks(data: any[], pos: any) {
       if (!wives.length) return;
 
       const stemY = pa.y + R;
-      const barY = stemY + (V_GAP * 0.4);
+      const barY = pa.y + V_GAP * 0.25;
       links.push({ type: "fan-stem", id: `fstem-${p.id}`, x: pa.x, y1: stemY, y2: barY });
       const xs = wives.map(w => w.p.x);
       links.push({ type: "fan-hbar", id: `fhbar-${p.id}`, x1: Math.min(...xs), x2: Math.max(...xs), y: barY });
